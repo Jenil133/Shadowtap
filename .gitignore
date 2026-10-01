@@ -1,0 +1,27 @@
+# Binaries and build output
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+
+# Coverage and profiles
+coverage.*
+*.pprof
+cpu.prof
+mem.prof
+
+# Local environment
+.env
+.env.*
+!.env.example
+*.local.yaml
+
+# e2e artifacts
+/.e2e/
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
