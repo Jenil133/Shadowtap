@@ -1,0 +1,2 @@
+go test fuzz v1
+string("?=phone=0 0")
