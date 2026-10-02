@@ -1,0 +1,20 @@
+# The build context only needs the Go module. Everything else is kept out so it cannot
+# bust the layer cache or end up in an image.
+.git
+.github
+.e2e
+.idea
+.vscode
+bin
+dist
+deploy
+scripts
+coverage.*
+*.out
+*.test
+*.pprof
+.env
+.env.*
+**/.DS_Store
+Dockerfile
+.dockerignore

@@ -1,0 +1,68 @@
+# shadowtap-tap configuration for the local compose stack. Unknown keys are rejected.
+#
+# compose.yaml overrides a few values through the environment:
+#   SHADOWTAP_KAFKA_BROKERS=kafka:9092  SHADOWTAP_SAMPLE_RATE=1.0  POD_NAME=tap-local
+#   SHADOWTAP_SCRUB_KEY=<dev key>       (read through scrub.key_env)
+
+log:
+  level: info # debug | info | warn | error
+  format: json # json | text
+
+listen:
+  grpc: ":9002" # ext_proc + grpc.health.v1 (plaintext h2c)
+  http: ":9090" # /healthz, /readyz, /metrics
+
+tap:
+  name: "" # empty: taken from POD_NAME
+  service_metadata_key: x-shadowtap-service
+  max_body_bytes: 131072 # kept per body and direction
+  queue_size: 4096
+  max_queue_bytes: 134217728 # 128 MiB of queued bodies; bounds memory in bursts
+  workers: 4
+
+sampling:
+  # Capture everything locally; the Kubernetes ConfigMap uses 0.05.
+  default_rate: 1.0
+  max_per_second: 0 # 0 = no per-tap cap
+  burst: 0
+  salt: "" # must be the same on every tap so decisions stay trace-consistent
+  exclude_paths: [/healthz, /readyz, /livez, /metrics]
+  # First match wins; every non-empty condition of a rule must match. This one keeps every
+  # login even when SHADOWTAP_SAMPLE_RATE lowers default_rate.
+  rules:
+    - name: demo-logins
+      services: [demo-api]
+      methods: [POST]
+      path_prefix: /api/login
+      rate: 1.0
+
+scrub:
+  key_file: ""
+  key_env: SHADOWTAP_SCRUB_KEY
+  # The lists below add to the built-in defaults; allow_keys and disabled_detectors are the
+  # only way to switch a built-in protection off.
+  sensitive_keys: []
+  sensitive_key_suffixes: []
+  allow_keys: []
+  credential_headers: []
+  ip_headers: []
+  url_headers: []
+  drop_headers: []
+  text_content_types: []
+  disabled_detectors: []
+  max_decoded_bytes: 1048576
+
+kafka:
+  brokers: ["kafka:9092"]
+  topic: shadowtap.captures.v1
+  client_id: shadowtap-tap
+  compression: zstd
+  linger_ms: 20
+  max_buffered_records: 10000
+  max_buffered_bytes: 268435456 # 256 MiB; bounds memory while Kafka is slow
+  max_record_bytes: 900000 # below the topic's max.message.bytes (1048576)
+  delivery_timeout_ms: 30000
+  tls:
+    enabled: false
+  sasl:
+    mechanism: "" # empty disables SASL

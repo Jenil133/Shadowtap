@@ -1,0 +1,126 @@
+# Local Shadowtap stack: Kafka (KRaft), topic init, demo-api, the tap, and Envoy standing in
+# for the Istio sidecar.
+#
+#   docker compose -f deploy/local/compose.yaml up -d --build --wait     (or: make up)
+#
+#   http://localhost:10000   demo-api through Envoy, ext_proc observe mode
+#   http://localhost:10001   demo-api through Envoy, ext_proc inline mode
+#   http://localhost:9901    Envoy admin
+#   http://localhost:9090    tap admin: /healthz, /readyz, /metrics
+#   localhost:29092          Kafka for host tools: shadowtap tail --brokers localhost:29092
+#
+# Published ports bind to 127.0.0.1 because nothing in this stack is authenticated.
+name: shadowtap
+
+services:
+  kafka:
+    image: apache/kafka:4.3.1
+    hostname: kafka
+    ports:
+      - "127.0.0.1:29092:29092"
+    environment:
+      # Any KAFKA_* variable replaces the image's default server.properties, so every
+      # setting a single-node combined broker + controller needs is spelled out.
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,PLAINTEXT_HOST://:29092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # Topics come from kafka-init only, so a typo in a topic name fails loudly.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      CLUSTER_ID: e1dOxNUgQaau2DHmW-xCZA
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null"]
+      interval: 5s
+      timeout: 20s
+      retries: 24
+      start_period: 20s
+
+  kafka-init:
+    image: apache/kafka:4.3.1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: ["/opt/kafka/bin/kafka-topics.sh"]
+    command:
+      - --bootstrap-server
+      - kafka:9092
+      - --create
+      - --if-not-exists
+      - --topic
+      - shadowtap.captures.v1
+      - --partitions
+      - "6"
+      - --replication-factor
+      - "1"
+      - --config
+      - retention.ms=604800000 # 7 days
+      - --config
+      - message.timestamp.type=CreateTime # record timestamp = request start, for replay seeks
+      - --config
+      - max.message.bytes=1048576 # above the tap's kafka.max_record_bytes (900000)
+
+  demo-api:
+    image: shadowtap/demo-api:dev
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        CMD: ./examples/demo/cmd/demo-api
+    command: ["--addr", ":8080", "--version", "v1"]
+    # Distroless has no shell or curl, so there is no container healthcheck; the e2e script
+    # probes GET /healthz through Envoy instead.
+    expose:
+      - "8080"
+
+  tap:
+    image: shadowtap/shadowtap-tap:dev
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        CMD: ./cmd/shadowtap-tap
+    command: ["--config", "/etc/shadowtap/tap.yaml"]
+    environment:
+      SHADOWTAP_KAFKA_BROKERS: kafka:9092
+      # Development only. In Kubernetes the key comes from the shadowtap-scrub-key Secret.
+      SHADOWTAP_SCRUB_KEY: local-dev-scrub-key-not-for-production
+      SHADOWTAP_SAMPLE_RATE: "1.0"
+      POD_NAME: tap-local
+    volumes:
+      - ./tap.yaml:/etc/shadowtap/tap.yaml:ro
+    ports:
+      - "127.0.0.1:9090:9090"
+    # Same constraints as the Kubernetes Deployment (read-only root, no capabilities).
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+
+  envoy:
+    image: envoyproxy/envoy:v1.39-latest
+    command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "info"]
+    volumes:
+      - ./envoy.yaml:/etc/envoy/envoy.yaml:ro
+    ports:
+      - "127.0.0.1:10000:10000" # observe listener
+      - "127.0.0.1:10001:10001" # inline listener
+      - "127.0.0.1:9901:9901" # admin
+    depends_on:
+      - tap
+      - demo-api
