@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo
+  labels:
+    # The EnvoyFilter attaches to demo-api's sidecar, so the sidecar must be injected.
+    istio-injection: enabled

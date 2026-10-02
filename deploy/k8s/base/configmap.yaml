@@ -1,0 +1,79 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shadowtap-tap-config
+  labels:
+    app.kubernetes.io/name: shadowtap-tap
+    app.kubernetes.io/component: tap
+data:
+  # Production defaults. Unknown keys are rejected at startup; the pods read this file only
+  # when they start, so run `kubectl -n shadowtap rollout restart deployment/shadowtap-tap`
+  # after changing it. Secrets never go here: the scrub key comes from SHADOWTAP_SCRUB_KEY
+  # (Secret shadowtap-scrub-key), a SASL password from SHADOWTAP_KAFKA_SASL_PASSWORD or
+  # kafka.sasl.password_file.
+  tap.yaml: |
+    log:
+      level: info
+      format: json
+
+    listen:
+      grpc: ":9002"
+      http: ":9090"
+
+    tap:
+      name: ""  # taken from POD_NAME
+      service_metadata_key: x-shadowtap-service
+      max_body_bytes: 131072
+      queue_size: 4096
+      max_queue_bytes: 134217728 # 128 MiB of queued bodies; bounds memory in bursts
+      workers: 4
+
+    sampling:
+      # Capture 5% of traces, at most 200 exchanges per second per tap replica.
+      default_rate: 0.05
+      max_per_second: 200
+      burst: 0  # 0 = ceil(max_per_second)
+      # Every tap in the mesh must share the salt, or a trace is captured at some hops only.
+      salt: ""
+      exclude_paths: [/healthz, /readyz, /livez, /metrics]
+      # First match wins, for example:
+      #   - name: checkout
+      #     services: [orders]
+      #     methods: [POST]
+      #     path_prefix: /api/checkout
+      #     rate: 0.25
+      rules: []
+
+    scrub:
+      key_file: ""
+      key_env: SHADOWTAP_SCRUB_KEY
+      # These lists extend the built-in defaults.
+      sensitive_keys: []
+      sensitive_key_suffixes: []
+      allow_keys: []
+      credential_headers: []
+      ip_headers: []
+      url_headers: []
+      drop_headers: []
+      text_content_types: []
+      disabled_detectors: []
+      max_decoded_bytes: 1048576
+
+    kafka:
+      # Strimzi bootstrap Service of the Kafka cluster "shadowtap-kafka" in namespace "kafka".
+      # For the TLS listener use port 9093 with tls.enabled and ca_file pointing at the
+      # mounted cluster CA (secret shadowtap-kafka-cluster-ca-cert); for SCRAM set
+      # sasl.mechanism SCRAM-SHA-512, sasl.username and the password as described above.
+      brokers: ["shadowtap-kafka-bootstrap.kafka.svc:9092"]
+      topic: shadowtap.captures.v1
+      client_id: shadowtap-tap
+      compression: zstd
+      linger_ms: 20
+      max_buffered_records: 10000
+      max_buffered_bytes: 268435456 # 256 MiB; bounds memory while Kafka is slow
+      max_record_bytes: 900000  # must stay below the topic's max.message.bytes (1048576)
+      delivery_timeout_ms: 30000
+      tls:
+        enabled: false
+      sasl:
+        mechanism: ""

@@ -1,0 +1,56 @@
+# Shadowtap capture for demo-api, observe mode (the default). Needs Istio 1.23+ (Envoy 1.31+);
+# on older meshes apply envoyfilter-inline.yaml instead (same name, so one replaces the other).
+#
+# ext_proc runs before the router on the inbound sidecar listener with observability_mode:
+# Envoy streams each request to the tap and never waits, so capture adds no latency, and
+# failure_mode_allow keeps traffic flowing when the tap is down.
+#
+# Another workload: copy this file and set metadata.namespace, workloadSelector.labels and the
+# x-shadowtap-service value (the service name in captures); add match.listener.portNumber to
+# capture one port only. cluster_name must name the tap Service, and a Sidecar resource that
+# limits egress hosts must include shadowtap/*.
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: demo-api-shadowtap
+  namespace: demo
+  labels:
+    app.kubernetes.io/part-of: shadowtap
+    shadowtap-mode: observe
+spec:
+  workloadSelector:
+    labels:
+      app: demo-api
+  configPatches:
+    - applyTo: HTTP_FILTER
+      match:
+        context: SIDECAR_INBOUND
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+              subFilter:
+                name: envoy.filters.http.router
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.ext_proc
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.ext_proc.v3.ExternalProcessor
+            grpc_service:
+              envoy_grpc:
+                cluster_name: outbound|9002||shadowtap-tap.shadowtap.svc.cluster.local
+              initial_metadata:
+                - key: x-shadowtap-service
+                  value: demo-api
+            observability_mode: true
+            failure_mode_allow: true
+            processing_mode:
+              request_header_mode: SEND
+              response_header_mode: SEND
+              request_body_mode: STREAMED
+              response_body_mode: STREAMED
+              # Free in observe mode, and without them a body followed by trailers
+              # (gRPC, chunked HTTP/1.1) never sees end_of_stream.
+              request_trailer_mode: SEND
+              response_trailer_mode: SEND

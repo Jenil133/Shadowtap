@@ -1,0 +1,8 @@
+# Shadowtap EnvoyFilters. Observe mode is the default; for meshes older than Istio 1.23
+# (Envoy 1.31) list envoyfilter-inline.yaml here instead. Never list both: they share a name.
+#
+#   kubectl apply -k deploy/istio
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - envoyfilter-observe.yaml

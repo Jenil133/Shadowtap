@@ -1,0 +1,57 @@
+# Shadowtap capture for demo-api, inline mode: the fallback for meshes older than Istio 1.23
+# (Envoy 1.31) that cannot use envoyfilter-observe.yaml (same name, so one replaces the other).
+#
+# Classic ext_proc: Envoy waits for a reply to every message. The tap answers an unsampled
+# request's first message with a mode_override that turns the rest off; sampled requests pay
+# one gRPC round trip per message, bounded by message_timeout. failure_mode_allow keeps traffic
+# flowing when the tap is slow or down.
+#
+# Another workload: copy this file and set metadata.namespace, workloadSelector.labels and the
+# x-shadowtap-service value (the service name in captures); add match.listener.portNumber to
+# capture one port only. cluster_name must name the tap Service, and a Sidecar resource that
+# limits egress hosts must include shadowtap/*.
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: demo-api-shadowtap
+  namespace: demo
+  labels:
+    app.kubernetes.io/part-of: shadowtap
+    shadowtap-mode: inline
+spec:
+  workloadSelector:
+    labels:
+      app: demo-api
+  configPatches:
+    - applyTo: HTTP_FILTER
+      match:
+        context: SIDECAR_INBOUND
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+              subFilter:
+                name: envoy.filters.http.router
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.ext_proc
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.ext_proc.v3.ExternalProcessor
+            grpc_service:
+              envoy_grpc:
+                cluster_name: outbound|9002||shadowtap-tap.shadowtap.svc.cluster.local
+              initial_metadata:
+                - key: x-shadowtap-service
+                  value: demo-api
+            # observability_mode is left out on purpose: Envoy before 1.31 rejects the field.
+            failure_mode_allow: true
+            allow_mode_override: true
+            message_timeout: 0.2s
+            processing_mode:
+              request_header_mode: SEND
+              response_header_mode: SEND
+              request_body_mode: BUFFERED_PARTIAL
+              response_body_mode: BUFFERED_PARTIAL
+              request_trailer_mode: SKIP
+              response_trailer_mode: SKIP

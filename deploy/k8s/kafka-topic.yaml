@@ -1,0 +1,25 @@
+# Captures topic for a Strimzi-managed Kafka cluster named "shadowtap-kafka" in namespace
+# "kafka" (bootstrap: shadowtap-kafka-bootstrap.kafka.svc). Apply it where the Topic Operator
+# watches:
+#
+#   kubectl apply -f deploy/k8s/kafka-topic.yaml
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: shadowtap.captures.v1
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: shadowtap-kafka
+    app.kubernetes.io/part-of: shadowtap
+spec:
+  topicName: shadowtap.captures.v1
+  # Records are keyed by trace id, so every hop of a trace lands on one partition. Raising the
+  # count later re-maps keys; size it up front.
+  partitions: 12
+  replicas: 3
+  config:
+    retention.ms: 604800000 # 7 days
+    min.insync.replicas: 2 # acks=all writes reach 2+ replicas; one broker may be down
+    max.message.bytes: 1048576 # the tap fits records to kafka.max_record_bytes (900000)
+    # The tap sets each record's timestamp to the request start; replays seek on it.
+    message.timestamp.type: CreateTime

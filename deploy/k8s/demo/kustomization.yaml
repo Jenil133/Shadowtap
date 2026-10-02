@@ -1,0 +1,17 @@
+# demo-api: a PII-heavy JSON API to capture from. Install the tap (../base) first, then this,
+# then the EnvoyFilter (../../istio) that streams demo-api's inbound traffic to the tap.
+#
+#   kubectl apply -k deploy/k8s/demo
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: demo
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: shadowtap-demo
+    includeSelectors: false
+    includeTemplates: true
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - deployment.yaml
+  - service.yaml

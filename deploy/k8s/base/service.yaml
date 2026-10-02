@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: shadowtap-tap
+  labels:
+    app.kubernetes.io/name: shadowtap-tap
+    app.kubernetes.io/component: tap
+spec:
+  selector:
+    app.kubernetes.io/name: shadowtap-tap
+  ports:
+    # Sidecars reach this port through the cluster
+    # outbound|9002||shadowtap-tap.shadowtap.svc.cluster.local (see deploy/istio). appProtocol
+    # grpc makes Istio use HTTP/2 and balance per stream, i.e. per captured request.
+    - name: grpc-extproc
+      port: 9002
+      targetPort: grpc-extproc
+      protocol: TCP
+      appProtocol: grpc
+    - name: http-admin
+      port: 9090
+      targetPort: http-admin
+      protocol: TCP
+      appProtocol: http

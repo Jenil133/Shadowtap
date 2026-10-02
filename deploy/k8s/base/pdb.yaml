@@ -1,0 +1,15 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: shadowtap-tap
+  labels:
+    app.kubernetes.io/name: shadowtap-tap
+    app.kubernetes.io/component: tap
+spec:
+  minAvailable: 1
+  # Readiness tracks Kafka, so a Kafka outage makes every tap unready; without this, the
+  # budget would then block node drains until Kafka recovers.
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: shadowtap-tap

@@ -1,0 +1,135 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shadowtap-tap
+  labels:
+    app.kubernetes.io/name: shadowtap-tap
+    app.kubernetes.io/component: tap
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: shadowtap-tap
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: shadowtap-tap
+        app.kubernetes.io/component: tap
+        app: shadowtap-tap # Istio telemetry labels workloads by app
+        sidecar.istio.io/inject: "true"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: /metrics
+        # Start the tap only once its sidecar can reach Kafka, and keep the sidecar's
+        # outbound path up for the tap's shutdown flush (gRPC stop 15s + queue drain 10s).
+        proxy.istio.io/config: |
+          holdApplicationUntilProxyStarts: true
+          terminationDrainDuration: 25s
+    spec:
+      serviceAccountName: shadowtap-tap
+      automountServiceAccountToken: false
+      # Service links would inject SHADOWTAP_TAP_* variables into the tap's environment.
+      enableServiceLinks: false
+      # The tap's shutdown (not ready -> gRPC GracefulStop -> drain queue -> flush Kafka)
+      # is budgeted to finish inside this.
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532 # distroless "nonroot"
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: shadowtap-tap
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: shadowtap-tap
+      containers:
+        - name: tap
+          image: ghcr.io/jenil133/shadowtap-tap:latest
+          args: ["--config", "/etc/shadowtap/tap.yaml"]
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            # HMAC key for pseudonyms. The pod does not start until this Secret exists
+            # (see ../secret.example.yaml).
+            - name: SHADOWTAP_SCRUB_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: shadowtap-scrub-key
+                  key: scrub-key
+            # ~90% of limits.memory, so the GC tightens before the container is OOM-killed.
+            - name: GOMEMLIMIT
+              value: 900MiB
+          ports:
+            - name: grpc-extproc
+              containerPort: 9002
+              protocol: TCP
+            - name: http-admin
+              containerPort: 9090
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 9090
+            periodSeconds: 2
+            failureThreshold: 30
+          # Ready = not draining and Kafka reachable; an unready tap only means captures
+          # pause, because every EnvoyFilter sets failure_mode_allow.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 9090
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9090
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          # Memory budget under GOMEMLIMIT: queued captures (tap.max_queue_bytes, 128 MiB)
+          # + Kafka producer buffer (kafka.max_buffered_bytes, 256 MiB) + in-flight streams
+          # (2 x tap.max_body_bytes each) + Go runtime. Raise the limit with those settings.
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: config
+              mountPath: /etc/shadowtap
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: shadowtap-tap-config

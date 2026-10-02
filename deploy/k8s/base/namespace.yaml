@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shadowtap
+  labels:
+    # The tap runs in the mesh: client sidecars reach it over Istio mTLS.
+    istio-injection: enabled
