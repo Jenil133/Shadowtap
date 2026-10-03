@@ -1,0 +1,133 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::These files need gofmt (run: gofmt -w .):"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test -race -count=1 -coverprofile=coverage.out ./...
+
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tail -n 1 | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+          if-no-files-found: error
+          retention-days: 14
+
+  fuzz-smoke:
+    name: fuzz smoke
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Fuzz every target for 10s
+        run: make fuzz FUZZTIME=10s
+
+      # A failing input is written to the package's testdata/fuzz; keep it to reproduce.
+      - name: Upload failing inputs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-failures
+          path: internal/*/testdata/fuzz/
+          if-no-files-found: ignore
+
+  docker:
+    name: docker (${{ matrix.image }})
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: shadowtap-tap
+            cmd: ./cmd/shadowtap-tap
+          - image: demo-api
+            cmd: ./examples/demo/cmd/demo-api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.image }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          build-args: |
+            CMD=${{ matrix.cmd }}
+            VERSION=${{ github.sha }}
+          tags: shadowtap/${{ matrix.image }}:ci
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }},ignore-error=true
+
+  manifests:
+    name: manifests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Render kustomizations
+        run: |
+          for dir in deploy/k8s/base deploy/k8s/demo deploy/istio; do
+            echo "kubectl kustomize $dir"
+            kubectl kustomize "$dir" > /dev/null
+          done
+
+      - name: Validate the compose file
+        run: docker compose -f deploy/local/compose.yaml config --quiet
+
+      - name: Validate the Envoy bootstrap with Envoy itself
+        run: >-
+          docker run --rm
+          -v "$PWD/deploy/local/envoy.yaml:/etc/envoy/envoy.yaml:ro"
+          envoyproxy/envoy:v1.39-latest
+          --mode validate -c /etc/envoy/envoy.yaml
+
+      - name: Check script syntax
+        run: bash -n scripts/e2e-local.sh
