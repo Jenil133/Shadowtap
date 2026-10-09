@@ -41,7 +41,7 @@ func (s *Server) Process(rpc extprocv3.ExternalProcessor_ProcessServer) (err err
 	defer func() {
 		// A bug here must cost one stream, not every stream on the tap.
 		if r := recover(); r != nil {
-			s.logPanic("processing an ext_proc stream", r)
+			s.logPanic(rpc.Context(), "processing an ext_proc stream", r)
 			if st.capturing() {
 				s.metrics.exchange(st.label, outcomePanic)
 			}

@@ -143,7 +143,10 @@ func TestServeCapturesScrubsAndShutsDown(t *testing.T) {
 		ResponseBody:    []byte(`{"id":"u_1","email":"` + email + `"}`),
 	}
 	opts := taptest.Options{Mode: capture.ModeInline, Metadata: map[string]string{"x-shadowtap-service": "demo-api"}}
-	if _, err := taptest.Run(ctx, extprocv3.NewExternalProcessorClient(conn), ex, opts); err != nil {
+	// Bounded: a tap that stops replying must fail the test, not hang it.
+	rctx, rcancel := context.WithTimeout(ctx, 30*time.Second)
+	defer rcancel()
+	if _, err := taptest.Run(rctx, extprocv3.NewExternalProcessorClient(conn), ex, opts); err != nil {
 		t.Fatal(err)
 	}
 

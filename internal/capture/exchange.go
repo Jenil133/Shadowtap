@@ -77,13 +77,27 @@ type Sampling struct {
 	KeySource string  `json:"key_source"` // header the sampling hash was computed from
 }
 
-// Timing is measured at the tap. DurationMicros approximates the time the
-// service took to start responding.
+// Timing is measured at the tap.
+//
+// DurationMicros is the time to the response headers
+// (ResponseStartedAt − StartedAt), not the total exchange time: it is the
+// service latency a replayer can reproduce, because an HTTP client returns at
+// the response headers too. The total, including the response body, is
+// TotalMicros (CompletedAt − StartedAt).
 type Timing struct {
 	StartedAt         time.Time `json:"started_at"`
 	ResponseStartedAt time.Time `json:"response_started_at,omitzero"`
 	CompletedAt       time.Time `json:"completed_at,omitzero"`
 	DurationMicros    int64     `json:"duration_us"`
+}
+
+// TotalMicros is the time from the request start to the end of the
+// response, or 0 when CompletedAt is unknown.
+func (t Timing) TotalMicros() int64 {
+	if t.CompletedAt.IsZero() || t.StartedAt.IsZero() || t.CompletedAt.Before(t.StartedAt) {
+		return 0
+	}
+	return t.CompletedAt.Sub(t.StartedAt).Microseconds()
 }
 
 // Request is the inbound request. Path is the scrubbed :path including the

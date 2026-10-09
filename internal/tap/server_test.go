@@ -338,6 +338,7 @@ func TestNewValidation(t *testing.T) {
 	}{
 		{"max body bytes", func(c *Config) { c.MaxBodyBytes = 0 }, sampler, scrubber, sink, "max_body_bytes"},
 		{"queue size", func(c *Config) { c.QueueSize = -1 }, sampler, scrubber, sink, "queue_size"},
+		{"queue bytes below one full job", func(c *Config) { c.MaxQueueBytes = c.MinQueueBytes() - 1 }, sampler, scrubber, sink, "max_queue_bytes"},
 		{"workers", func(c *Config) { c.Workers = 0 }, sampler, scrubber, sink, "workers"},
 		{"metadata key", func(c *Config) { c.ServiceMetadataKey = " " }, sampler, scrubber, sink, "service_metadata_key"},
 		{"sampler", func(*Config) {}, nil, scrubber, sink, "sampler"},

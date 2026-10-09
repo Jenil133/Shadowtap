@@ -35,6 +35,9 @@ type recorder struct {
 	stopAfter int
 	// stopErr is returned when the stream ends because of stopAfter.
 	stopErr error
+	// hangOnEOF keeps the stream open after the client's half-close until
+	// the client cancels it: a server that never ends the stream.
+	hangOnEOF bool
 
 	mu    sync.Mutex
 	msgs  []*extprocv3.ProcessingRequest
@@ -52,6 +55,9 @@ func (r *recorder) Process(stream extprocv3.ExternalProcessor_ProcessServer) err
 	for i := 0; ; i++ {
 		req, err := stream.Recv()
 		if err != nil {
+			if r.hangOnEOF {
+				<-stream.Context().Done()
+			}
 			r.ended <- err
 			return nil
 		}
@@ -628,6 +634,55 @@ func TestIsNoop(t *testing.T) {
 		if got := IsNoop(tt.reply); got != tt.want {
 			t.Errorf("%s: IsNoop = %v, want %v", tt.name, got, tt.want)
 		}
+	}
+}
+
+// A server that skips a reply, or never ends the stream, fails Run after the
+// reply timeout instead of blocking it until the caller's context expires.
+func TestReplyTimeout(t *testing.T) {
+	const timeout = 50 * time.Millisecond
+	t.Run("inline missing reply", func(t *testing.T) {
+		rec := newRecorder()
+		rec.reply = func(_ int, req *extprocv3.ProcessingRequest) *extprocv3.ProcessingResponse {
+			if req.GetResponseHeaders() != nil {
+				return nil // the bug under test: response_headers goes unanswered
+			}
+			return matchingReply(req)
+		}
+		res, err := Run(testCtx(t), Dial(t, rec), postExchange(10, 10), Options{Mode: capture.ModeInline, ReplyTimeout: timeout})
+		var te *TimeoutError
+		if !errors.As(err, &te) || err.Error() != "taptest: no reply to response_headers within 50ms" {
+			t.Fatalf("err = %v, want a reply timeout naming response_headers", err)
+		}
+		if res.Sent != 3 || len(res.Replies) != 2 {
+			t.Errorf("result = %+v", res)
+		}
+		// The timeout cancels the stream so the server is not left hanging.
+		if err := rec.waitEnded(t); status.Code(err) != codes.Canceled {
+			t.Errorf("server stream ended with %v, want Canceled", err)
+		}
+	})
+	t.Run("observe stream never ends", func(t *testing.T) {
+		rec := newRecorder()
+		rec.hangOnEOF = true
+		_, err := Run(testCtx(t), Dial(t, rec), postExchange(1, 1), Options{ReplyTimeout: timeout})
+		var te *TimeoutError
+		if !errors.As(err, &te) || te.Awaiting != "end of stream" || te.Timeout != timeout {
+			t.Fatalf("err = %v, want an end-of-stream timeout", err)
+		}
+	})
+	t.Run("inline stream never ends", func(t *testing.T) {
+		rec := newRecorder()
+		rec.reply = noop
+		rec.hangOnEOF = true
+		_, err := Run(testCtx(t), Dial(t, rec), postExchange(1, 1), Options{Mode: capture.ModeInline, ReplyTimeout: timeout})
+		var te *TimeoutError
+		if !errors.As(err, &te) || te.Awaiting != "end of stream" {
+			t.Fatalf("err = %v, want an end-of-stream timeout", err)
+		}
+	})
+	if opt, err := (Options{}).normalize(); err != nil || opt.ReplyTimeout != DefaultReplyTimeout {
+		t.Errorf("default reply timeout = %v, %v", opt.ReplyTimeout, err)
 	}
 }
 

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Jenil133/Shadowtap/internal/scrub"
 )
 
 const testKey = "0123456789abcdef0123456789abcdef"
@@ -200,6 +202,9 @@ func TestValidate(t *testing.T) {
 	}{
 		{"no key", func(c *Tap) { c.Scrub.Key = nil }, "scrub key"},
 		{"short key", func(c *Tap) { c.Scrub.Key = []byte("short") }, "scrub key"},
+		// The boundary itself: one byte under the minimum is rejected (the
+		// exact minimum is accepted below).
+		{"key one byte short", func(c *Tap) { c.Scrub.Key = bytes.Repeat([]byte("k"), scrub.MinKeyBytes-1) }, "scrub key"},
 		{"level", func(c *Tap) { c.Log.Level = "loud" }, "log.level"},
 		{"format", func(c *Tap) { c.Log.Format = "xml" }, "log.format"},
 		{"listen", func(c *Tap) { c.Listen.HTTP = "" }, "listen"},
@@ -207,6 +212,9 @@ func TestValidate(t *testing.T) {
 		{"body large", func(c *Tap) { c.Tap.MaxBodyBytes = 1 << 30 }, "max_body_bytes"},
 		{"queue", func(c *Tap) { c.Tap.QueueSize = 0 }, "queue_size"},
 		{"queue bytes", func(c *Tap) { c.Tap.MaxQueueBytes = 1000 }, "max_queue_bytes"},
+		// Exactly two full bodies leaves no room for the per-job allowance:
+		// such an exchange would always be dropped.
+		{"queue bytes no overhead", func(c *Tap) { c.Tap.MaxQueueBytes = 2 * c.Tap.MaxBodyBytes }, "max_queue_bytes"},
 		{"workers", func(c *Tap) { c.Tap.Workers = 0 }, "workers"},
 		{"metadata key", func(c *Tap) { c.Tap.ServiceMetadataKey = "" }, "service_metadata_key"},
 		{"rate", func(c *Tap) { c.Sampling.DefaultRate = 2 }, "default_rate"},
@@ -222,6 +230,12 @@ func TestValidate(t *testing.T) {
 				t.Errorf("err = %v, want mention of %q", err, tt.want)
 			}
 		})
+	}
+	// The shortest accepted key is exactly scrub.MinKeyBytes.
+	exact := base()
+	exact.Scrub.Key = bytes.Repeat([]byte("k"), scrub.MinKeyBytes)
+	if err := exact.Validate(); err != nil {
+		t.Errorf("a %d-byte key was rejected: %v", scrub.MinKeyBytes, err)
 	}
 	// All problems are reported together.
 	c := base()

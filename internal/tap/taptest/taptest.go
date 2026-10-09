@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	filterv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
@@ -46,6 +47,9 @@ const (
 	// DefaultBufferLimit is the BUFFERED_PARTIAL limit in inline mode, Envoy's
 	// default per-connection buffer limit.
 	DefaultBufferLimit = 1 << 20
+	// DefaultReplyTimeout bounds each wait for the server: for the reply to
+	// an inline message, and for the end of the stream after the last one.
+	DefaultReplyTimeout = 10 * time.Second
 )
 
 // Exchange is one HTTP request and its response as Envoy sees them.
@@ -90,6 +94,25 @@ type Options struct {
 	// message is awaited first; in observe mode the cancellation races with
 	// the messages still in flight, exactly like a real reset.
 	CancelAfter int
+	// ReplyTimeout bounds each wait for the server: for the reply to an
+	// inline message, and for the end of the stream after the last message.
+	// A server that skips a reply (a protocol bug) fails Run with a
+	// *TimeoutError after this long instead of blocking it until ctx is
+	// done. DefaultReplyTimeout when 0.
+	ReplyTimeout time.Duration
+}
+
+// TimeoutError is returned by Run when the server did not answer within
+// Options.ReplyTimeout.
+type TimeoutError struct {
+	// Awaiting names what Run was waiting for: "reply to response_headers",
+	// or "end of stream" after the last message.
+	Awaiting string
+	Timeout  time.Duration
+}
+
+func (e *TimeoutError) Error() string {
+	return fmt.Sprintf("taptest: no %s within %s", e.Awaiting, e.Timeout)
 }
 
 // Result describes a run.
@@ -154,6 +177,9 @@ func (o Options) normalize() (Options, error) {
 	}
 	if o.BufferLimit <= 0 {
 		o.BufferLimit = DefaultBufferLimit
+	}
+	if o.ReplyTimeout <= 0 {
+		o.ReplyTimeout = DefaultReplyTimeout
 	}
 	return o, nil
 }
@@ -317,7 +343,18 @@ func (r *runner) observe() error {
 	if sendErr != nil {
 		r.cancel() // unblock the receiving goroutine
 	}
-	<-ended
+	// After the half-close the server must end the stream; one that never
+	// does has a protocol bug, so this wait is bounded like every other.
+	var waitErr error
+	timer := time.NewTimer(r.opt.ReplyTimeout)
+	defer timer.Stop()
+	select {
+	case <-ended:
+	case <-timer.C:
+		waitErr = &TimeoutError{Awaiting: "end of stream", Timeout: r.opt.ReplyTimeout}
+		r.cancel()
+		<-ended
+	}
 	r.res.Replies = replies
 	switch {
 	case sendErr != nil:
@@ -325,6 +362,8 @@ func (r *runner) observe() error {
 	case len(replies) > 0:
 		return fmt.Errorf("taptest: server sent %d replies in observability mode (first: %s); Envoy ignores them",
 			len(replies), replyKind(replies[0]))
+	case waitErr != nil:
+		return waitErr
 	case r.cancelled:
 		return nil
 	case !errors.Is(recvErr, io.EOF):
@@ -368,13 +407,16 @@ func (r *runner) roundTrip(m *extprocv3.ProcessingRequest) (reply *extprocv3.Pro
 		return nil, true, fmt.Errorf("taptest: send %s: %w", kind, err)
 	}
 	r.res.Sent++
-	reply, err = r.stream.Recv()
+	reply, err = r.recv("reply to " + kind)
+	var timeout *TimeoutError
 	switch {
 	case errors.Is(err, io.EOF):
 		// Closing the stream instead of replying is allowed: Envoy stops
 		// calling the server for the rest of the request.
 		r.res.ServerClosedEarly = true
 		return nil, true, nil
+	case errors.As(err, &timeout):
+		return nil, true, err
 	case err != nil:
 		return nil, true, fmt.Errorf("taptest: waiting for the %s reply: %w", kind, err)
 	}
@@ -396,15 +438,44 @@ func (r *runner) closeAndWait() error {
 
 // waitEnd waits for the server to end the stream with an OK status.
 func (r *runner) waitEnd() error {
-	reply, err := r.stream.Recv()
+	reply, err := r.recv("end of stream")
+	var timeout *TimeoutError
 	switch {
 	case errors.Is(err, io.EOF):
 		return nil
+	case errors.As(err, &timeout):
+		return err
 	case err != nil:
 		return fmt.Errorf("taptest: server ended the stream: %w", err)
 	}
 	r.res.Replies = append(r.res.Replies, reply)
 	return fmt.Errorf("taptest: unexpected %s reply after the last message", replyKind(reply))
+}
+
+// recv waits for the server's next message for at most the reply timeout.
+// On timeout the stream is cancelled, which makes the pending Recv return,
+// and a *TimeoutError names what was awaited. Without the bound, a server
+// that skips a reply would block Run until the caller's context expires.
+func (r *runner) recv(awaiting string) (*extprocv3.ProcessingResponse, error) {
+	type result struct {
+		reply *extprocv3.ProcessingResponse
+		err   error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		reply, err := r.stream.Recv()
+		ch <- result{reply, err}
+	}()
+	timer := time.NewTimer(r.opt.ReplyTimeout)
+	defer timer.Stop()
+	select {
+	case res := <-ch:
+		return res.reply, res.err
+	case <-timer.C:
+		r.cancel()
+		<-ch // Recv returns once the stream is cancelled
+		return nil, &TimeoutError{Awaiting: awaiting, Timeout: r.opt.ReplyTimeout}
+	}
 }
 
 func (r *runner) cancelDue() bool {

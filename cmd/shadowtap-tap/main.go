@@ -36,10 +36,15 @@ import (
 
 var version = "dev"
 
-// Shutdown budget; together they stay under the pod's 30 s grace period.
+// Shutdown budget. Each step gets its own deadline, so a slow step cannot
+// leave the next one with an expired context (a queue drain that runs out
+// the clock must still leave Kafka time to flush what was drained). Together
+// they stay under the pod's 30 s grace period.
 const (
-	grpcStopTimeout = 15 * time.Second
-	drainTimeout    = 10 * time.Second
+	grpcStopTimeout  = 12 * time.Second
+	drainTimeout     = 7 * time.Second
+	flushTimeout     = 7 * time.Second
+	adminStopTimeout = 2 * time.Second
 )
 
 func main() {
@@ -228,18 +233,17 @@ func (a *app) shutdown() error {
 		<-stopped
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), drainTimeout)
-	defer cancel()
 	var errs []error
-	if err := a.tap.Shutdown(ctx); err != nil {
-		errs = append(errs, fmt.Errorf("drain captures: %w", err))
+	step := func(name string, timeout time.Duration, f func(context.Context) error) {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		if err := f(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", name, err))
+		}
 	}
-	if err := a.producer.Close(ctx); err != nil {
-		errs = append(errs, fmt.Errorf("flush kafka: %w", err))
-	}
-	if err := a.admin.Shutdown(ctx); err != nil {
-		errs = append(errs, fmt.Errorf("stop admin server: %w", err))
-	}
+	step("drain captures", drainTimeout, a.tap.Shutdown)
+	step("flush kafka", flushTimeout, a.producer.Close)
+	step("stop admin server", adminStopTimeout, a.admin.Shutdown)
 	a.log.Info("shutdown complete")
 	return errors.Join(errs...)
 }

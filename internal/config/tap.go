@@ -195,9 +195,11 @@ func (c Tap) Validate() error {
 	if c.Tap.QueueSize < 1 {
 		errs = append(errs, fmt.Errorf("tap.queue_size %d must be positive", c.Tap.QueueSize))
 	}
-	if c.Tap.MaxQueueBytes != 0 && c.Tap.MaxQueueBytes < 2*c.Tap.MaxBodyBytes {
-		// One exchange with both bodies at the limit must fit.
-		errs = append(errs, fmt.Errorf("tap.max_queue_bytes %d must be 0 or at least 2 x max_body_bytes (%d)", c.Tap.MaxQueueBytes, 2*c.Tap.MaxBodyBytes))
+	if c.Tap.MaxQueueBytes != 0 && c.Tap.MaxQueueBytes < c.Tap.MinQueueBytes() {
+		// One exchange with both bodies at the limit, plus its per-job
+		// allowance, must fit.
+		errs = append(errs, fmt.Errorf("tap.max_queue_bytes %d must be 0 or at least 2 x max_body_bytes + %d (%d)",
+			c.Tap.MaxQueueBytes, tap.JobOverheadBytes, c.Tap.MinQueueBytes()))
 	}
 	if c.Tap.Workers < 1 || c.Tap.Workers > maxWorkers {
 		errs = append(errs, fmt.Errorf("tap.workers %d not in [1, %d]", c.Tap.Workers, maxWorkers))

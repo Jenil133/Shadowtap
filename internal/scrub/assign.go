@@ -124,8 +124,8 @@ func assignValue(t string, from int) (int, int) {
 		return i + 1, min(j, len(t))
 	}
 	end := i
-	for end < len(t) && !isAssignEnd(t[end]) {
-		end++
+	for end < len(t) && !isAssignEnd(t[end]) && !strings.HasPrefix(t[end:], "%20") {
+		end++ // an encoded space ends a value like a plain one
 	}
 	// A value with spaces inside (a phone number) is whatever a detector finds
 	// at its start.
@@ -189,7 +189,11 @@ func (s *Scrubber) encodedEmails(t string, rep Report) string {
 			de++
 		}
 		local, domain := t[ls:i], strings.TrimRight(t[i+at:de], ".-")
-		if local == "" || !validEncodedDomain(domain) {
+		// A local part that follows another '@' (a%40b%40c) is the domain of
+		// the address before it, not an address of its own; the detector
+		// treats a chained '@' the same way.
+		chained := ls > 0 && t[ls-1] == '@' || ls >= 3 && t[ls-3:ls] == "%40" || ls >= 5 && t[ls-5:ls] == "%2540"
+		if local == "" || chained || !validEncodedDomain(domain) {
 			i += at - 1
 			continue
 		}

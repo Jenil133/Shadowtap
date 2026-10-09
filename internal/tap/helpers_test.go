@@ -14,6 +14,7 @@ import (
 	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 
 	"github.com/Jenil133/Shadowtap/internal/capture"
@@ -125,11 +126,18 @@ type fakeSink struct {
 	release  chan struct{} // when set, Publish waits for it to be closed
 	entered  chan string   // when set, receives each request path as Publish starts
 
-	mu  sync.Mutex
-	got []*capture.Exchange
+	mu    sync.Mutex
+	got   []*capture.Exchange
+	spans map[string]trace.SpanContext // exchange id -> span context Publish was called with
 }
 
-func (f *fakeSink) Publish(_ context.Context, x *capture.Exchange) error {
+func (f *fakeSink) Publish(ctx context.Context, x *capture.Exchange) error {
+	f.mu.Lock()
+	if f.spans == nil {
+		f.spans = map[string]trace.SpanContext{}
+	}
+	f.spans[x.ID] = trace.SpanContextFromContext(ctx)
+	f.mu.Unlock()
 	if f.entered != nil {
 		f.entered <- x.Request.Path
 	}
@@ -155,6 +163,13 @@ func (f *fakeSink) published() []*capture.Exchange {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]*capture.Exchange(nil), f.got...)
+}
+
+// spanContext returns the span context Publish received for exchange id.
+func (f *fakeSink) spanContext(id string) trace.SpanContext {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.spans[id]
 }
 
 // stepClock advances by step on every reading.
@@ -197,9 +212,19 @@ func testConfig() Config {
 // server (for example its clock) before any stream exists.
 func newHarness(t *testing.T, cfg Config, setup ...func(*harness)) *harness {
 	t.Helper()
+	return newHarnessWith(t, cfg, nil, nil, setup...)
+}
+
+// newHarnessWith is newHarness with options for New and a logger; a nil
+// logger sends server logs to the test log.
+func newHarnessWith(t *testing.T, cfg Config, opts []Option, log *slog.Logger, setup ...func(*harness)) *harness {
+	t.Helper()
+	if log == nil {
+		log = testLogger(t)
+	}
 	h := &harness{t: t, reg: prometheus.NewRegistry(), sampler: &fakeSampler{}, scrubber: newFakeScrubber()}
 	h.sink = &fakeSink{t: t, scrubber: h.scrubber}
-	srv, err := New(cfg, h.sampler, h.scrubber, h.sink, h.reg, testLogger(t))
+	srv, err := New(cfg, h.sampler, h.scrubber, h.sink, h.reg, log, opts...)
 	if err != nil {
 		t.Fatal(err)
 	}

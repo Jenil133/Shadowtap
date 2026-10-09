@@ -15,6 +15,8 @@ import (
 
 	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 
@@ -41,6 +43,7 @@ type Server struct {
 	scrubber Scrubber
 	sink     Sink
 	log      *slog.Logger
+	tracer   trace.Tracer
 	metrics  *metrics
 	services *serviceLabels
 	now      func() time.Time // exchange timestamps; replaced in tests
@@ -73,7 +76,7 @@ type job struct {
 // dominate, plus an allowance for headers and bookkeeping.
 func (j job) size() int64 { return int64(len(j.reqBody)+len(j.respBody)) + jobOverhead }
 
-const jobOverhead = 4 << 10
+const jobOverhead = JobOverheadBytes
 
 // New validates cfg, registers the tap's metrics on reg (nil skips
 // registration) and starts cfg.Workers workers. An empty cfg.Name defaults to
@@ -84,9 +87,24 @@ const jobOverhead = 4 << 10
 // body_omitted_total{reason}, queue_depth, message_seconds{type} and
 // process_seconds, all prefixed shadowtap_tap_. The service label holds the
 // first 100 distinct service names; later ones are counted as "other".
-func New(cfg Config, sampler Sampler, scrubber Scrubber, sink Sink, reg prometheus.Registerer, log *slog.Logger) (*Server, error) {
+//
+// Tracing: every exchange a worker handles gets a "shadowtap.capture" span
+// that covers scrubbing, validation and publishing, parented to the request's
+// own trace when the capture carries one, and the sink is called with that
+// span's context. Spans come from the provider given with WithTracerProvider,
+// or the global one.
+func New(cfg Config, sampler Sampler, scrubber Scrubber, sink Sink, reg prometheus.Registerer, log *slog.Logger, opts ...Option) (*Server, error) {
 	if err := validate(cfg, sampler, scrubber, sink); err != nil {
 		return nil, err
+	}
+	var o options
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&o)
+		}
+	}
+	if o.tracerProvider == nil {
+		o.tracerProvider = otel.GetTracerProvider()
 	}
 	// gRPC metadata keys are lowercase on the wire; normalizing once keeps the
 	// per-stream lookup exact.
@@ -110,6 +128,7 @@ func New(cfg Config, sampler Sampler, scrubber Scrubber, sink Sink, reg promethe
 		scrubber:      scrubber,
 		sink:          sink,
 		log:           log,
+		tracer:        o.tracerProvider.Tracer(tracerName),
 		services:      newServiceLabels(maxServiceLabels),
 		now:           time.Now,
 		queue:         make(chan job, cfg.QueueSize),
@@ -143,6 +162,11 @@ func validate(cfg Config, sampler Sampler, scrubber Scrubber, sink Sink) error {
 	}
 	if cfg.MaxQueueBytes < 0 {
 		errs = append(errs, fmt.Errorf("max_queue_bytes must not be negative, got %d", cfg.MaxQueueBytes))
+	} else if cfg.MaxQueueBytes > 0 && cfg.MaxBodyBytes > 0 && cfg.MaxQueueBytes < cfg.MinQueueBytes() {
+		// Below this, an exchange with both bodies at the limit is always
+		// dropped as queue_full.
+		errs = append(errs, fmt.Errorf("max_queue_bytes %d must be 0 or at least %d (2 x max_body_bytes + %d)",
+			cfg.MaxQueueBytes, cfg.MinQueueBytes(), JobOverheadBytes))
 	}
 	if cfg.Workers <= 0 {
 		errs = append(errs, fmt.Errorf("workers must be positive, got %d", cfg.Workers))
@@ -261,46 +285,56 @@ func (s *Server) work(ctx context.Context) {
 	}
 }
 
-// scrubAndPublish scrubs, validates and publishes one exchange and returns
-// the outcome. A panic in the scrubber or the sink is contained here: the exchange
-// is dropped (a half-scrubbed exchange must never be published) and the
-// worker carries on.
+// scrubAndPublish scrubs, validates and publishes one exchange under its
+// capture span and returns the outcome. A panic in the scrubber or the sink
+// is contained here: the exchange is dropped (a half-scrubbed exchange must
+// never be published) and the worker carries on.
 func (s *Server) scrubAndPublish(ctx context.Context, j job) (outcome string) {
+	x := j.x
+	ctx, span := s.startCaptureSpan(ctx, x)
 	defer func() {
 		if r := recover(); r != nil {
-			s.logPanic("scrubbing or publishing an exchange", r)
+			s.logPanic(ctx, "scrubbing or publishing an exchange", r)
 			outcome = outcomePanic
 		}
+		endCaptureSpan(span, outcome)
 	}()
-	x := j.x
 	x.Request.Body.SetData(j.reqBody)
 	x.Response.Body.SetData(j.respBody)
 	s.scrubber.Exchange(x)
 	s.metrics.scrubbed(x)
+	recordScrubbed(span, x)
 	if err := x.Validate(); err != nil {
 		s.invalidLog.Do(func() {
-			s.log.Warn("tap: dropping invalid exchange", "service", x.Service, "err", err)
+			s.log.WarnContext(ctx, "tap: dropping invalid exchange", "service", x.Service, "err", err)
 		})
 		return outcomeInvalid
 	}
 	if err := s.sink.Publish(ctx, x); err != nil {
+		if ctx.Err() != nil {
+			// Shutdown gave up waiting while this exchange was in flight:
+			// the sink refused it because the tap is stopping, not because
+			// it is unhealthy.
+			return outcomeShutdown
+		}
 		s.sinkErrLog.Do(func() {
-			s.log.Warn("tap: sink rejected exchange", "service", x.Service, "err", err)
+			s.log.WarnContext(ctx, "tap: sink rejected exchange", "service", x.Service, "err", err)
 		})
 		return outcomeSinkError
 	}
 	return outcomePublished
 }
 
-// logPanic logs a recovered panic. Only runtime errors are logged verbatim:
+// logPanic logs a recovered panic under ctx, so a panic inside a capture span
+// is logged with that span's ids. Only runtime errors are logged verbatim:
 // other panic values may have been built from captured data, which must never
 // reach the logs.
-func (s *Server) logPanic(where string, r any) {
+func (s *Server) logPanic(ctx context.Context, where string, r any) {
 	detail := fmt.Sprintf("panic of type %T", r)
 	if err, ok := r.(runtime.Error); ok {
 		detail = err.Error()
 	}
 	s.panicLog.Do(func() {
-		s.log.Error("tap: recovered from panic", "while", where, "panic", detail, "stack", string(debug.Stack()))
+		s.log.ErrorContext(ctx, "tap: recovered from panic", "while", where, "panic", detail, "stack", string(debug.Stack()))
 	})
 }

@@ -9,6 +9,8 @@ import (
 	"context"
 	"runtime"
 
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/Jenil133/Shadowtap/internal/capture"
 	"github.com/Jenil133/Shadowtap/internal/sampling"
 )
@@ -37,6 +39,14 @@ type Config struct {
 	Workers int `json:"workers"`
 }
 
+// JobOverheadBytes is what each queued exchange counts against MaxQueueBytes
+// on top of its bodies: an allowance for headers and bookkeeping.
+const JobOverheadBytes = 4 << 10
+
+// MinQueueBytes is the smallest MaxQueueBytes that still admits one exchange
+// with both bodies at MaxBodyBytes.
+func (c Config) MinQueueBytes() int { return 2*c.MaxBodyBytes + JobOverheadBytes }
+
 // DefaultConfig returns production defaults.
 func DefaultConfig() Config {
 	return Config{
@@ -46,6 +56,22 @@ func DefaultConfig() Config {
 		MaxQueueBytes:      DefaultMaxQueueBytes,
 		Workers:            runtime.GOMAXPROCS(0),
 	}
+}
+
+// Option configures what a Server needs beyond its Config and its
+// collaborators.
+type Option func(*options)
+
+// options collects the settings Options apply.
+type options struct {
+	tracerProvider trace.TracerProvider
+}
+
+// WithTracerProvider sets the provider the tap's spans are created from. Nil,
+// like leaving the option out, uses the global provider, which is a no-op
+// until telemetry is set up.
+func WithTracerProvider(tp trace.TracerProvider) Option {
+	return func(o *options) { o.tracerProvider = tp }
 }
 
 // Sampler decides whether a request is captured. *sampling.Sampler

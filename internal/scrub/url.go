@@ -228,7 +228,7 @@ func (s *Scrubber) authority(a string, rep Report) string {
 	}
 	nu := user
 	switch {
-	case user == "" || IsPseudonym(user):
+	case user == "" || strongPseudonym(user):
 	case s.kinds&setCredential != 0:
 		rep.Add(KindCredential, 1)
 		nu = s.token(user)

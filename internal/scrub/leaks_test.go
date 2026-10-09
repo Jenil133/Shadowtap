@@ -95,6 +95,15 @@ func TestHeaderLeaks(t *testing.T) {
 		{"referer", "https://x.example.com/login?next=%2Freset%3Ftoken%3Dabc123opaque", []string{"abc123opaque"}},
 		{"referer", "https://app.example.com/search?q=alice+tag@example.com", []string{"alice"}},
 		{"x-envoy-original-path", "/users/alice%2540example.com", []string{"alice"}},
+		// Numeric credentials can have the shape of a card pseudonym (a
+		// leading 0 and a valid Luhn digit); they must not be kept as if they
+		// were already scrubbed.
+		{"authorization", "Bearer 0501015009084", []string{"0501015009084"}},
+		{"x-api-key", "0001234567897", []string{"0001234567897"}},
+		{"cookie", "session=0501015009084; theme=dark", []string{"0501015009084"}},
+		{"cookie", `sid="0001234567897"`, []string{"0001234567897"}},
+		{"set-cookie", "session=0501015009084; Path=/; HttpOnly", []string{"0501015009084"}},
+		{"referer", "https://0001234567897:pw@app.example.com/x", []string{"0001234567897"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name+"/"+tt.value, func(t *testing.T) {

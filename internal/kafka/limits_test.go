@@ -76,7 +76,7 @@ func TestPublishBudgetsForKeyAndHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if size := userSize(newRecord(cfg.Topic, x, value)) + recordFraming; size > int64(cfg.MaxRecordBytes) {
+	if size := userSize(newRecord(cfg.Topic, x.Key(), x.RecordHeaders(), value, x.Timing.StartedAt)) + recordFraming; size > int64(cfg.MaxRecordBytes) {
 		t.Errorf("record of %d bytes exceeds max_record_bytes %d", size, cfg.MaxRecordBytes)
 	}
 	if x.Response.Body.Omitted != capture.OmittedTooLarge {

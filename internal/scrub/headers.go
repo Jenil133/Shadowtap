@@ -95,7 +95,7 @@ func (s *Scrubber) credentialValue(name, v string, rep Report) string {
 	if n, ok := authScheme(name, v); ok {
 		scheme, cred = v[:n], v[n:]
 	}
-	if IsPseudonym(cred) {
+	if strongPseudonym(cred) {
 		return v
 	}
 	rep.Add(KindCredential, 1)
@@ -198,7 +198,7 @@ func (s *Scrubber) cookieToken(v string, rep Report) string {
 	if len(v) >= 2 && v[0] == '"' && v[len(v)-1] == '"' {
 		inner, quoted = v[1:len(v)-1], true
 	}
-	if inner == "" || IsPseudonym(inner) {
+	if inner == "" || strongPseudonym(inner) {
 		return v
 	}
 	rep.Add(KindCredential, 1)

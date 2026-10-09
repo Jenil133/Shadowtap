@@ -847,6 +847,10 @@ func TestTiming(t *testing.T) {
 	if x.Timing != want {
 		t.Errorf("timing = %+v, want %+v", x.Timing, want)
 	}
+	// duration_us is time to response headers; the total includes the body.
+	if got := x.Timing.TotalMicros(); got != 3_000_000 {
+		t.Errorf("TotalMicros = %d, want 3000000", got)
+	}
 }
 
 func TestMetadataServiceFromContext(t *testing.T) {

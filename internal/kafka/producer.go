@@ -12,9 +12,21 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
+	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/Jenil133/Shadowtap/internal/capture"
+	"github.com/Jenil133/Shadowtap/internal/telemetry"
 )
+
+// tracerName is the instrumentation scope of the producer's spans.
+const tracerName = "github.com/Jenil133/Shadowtap/internal/kafka"
+
+// produceSpanName names the span that covers one record from Publish to the
+// broker's acknowledgement.
+const produceSpanName = "shadowtap.kafka.produce"
 
 // ErrBackpressure is returned by Publish when the producer buffer is full
 // because Kafka is slower than capture or unreachable. The exchange is not
@@ -175,11 +187,11 @@ func maxBufferedBytes(cfg Config) int {
 	return DefaultConfig().MaxBufferedBytes
 }
 
-// valueBudget is how large x's encoding may be so that its whole record —
-// key, headers and framing included — stays within MaxRecordBytes.
-func (p *Producer) valueBudget(x *capture.Exchange) int {
-	overhead := len(x.Key()) + recordFraming
-	for _, h := range x.RecordHeaders() {
+// valueBudget is how large an exchange's encoding may be so that its whole
+// record — key, headers and framing included — stays within MaxRecordBytes.
+func (p *Producer) valueBudget(key []byte, headers []capture.RecordHeader) int {
+	overhead := len(key) + recordFraming
+	for _, h := range headers {
 		overhead += len(h.Key) + len(h.Value)
 	}
 	return p.maxRecordBytes - overhead
@@ -193,6 +205,11 @@ func (p *Producer) valueBudget(x *capture.Exchange) int {
 // means the record was buffered; whether Kafka stored it is reported by the
 // metrics. ctx only gates these checks: delivery continues after Publish
 // returns, whatever happens to ctx.
+//
+// The record is traced: a "shadowtap.kafka.produce" span, child of the span
+// in ctx, lasts until the broker acknowledges or fails the record, and the
+// record headers carry that span's context (traceparent) so a consumer can
+// continue the trace from the record alone.
 func (p *Producer) Publish(ctx context.Context, x *capture.Exchange) error {
 	start := time.Now()
 	if ctx != nil && ctx.Err() != nil {
@@ -217,11 +234,16 @@ func (p *Producer) Publish(ctx context.Context, x *capture.Exchange) error {
 		return ErrBackpressure
 	}
 
-	budget := p.valueBudget(x)
+	key := x.Key()
+	ctx, span := p.startProduceSpan(orBackground(ctx), key)
+	headers := telemetry.InjectHeaders(ctx, x.RecordHeaders())
+	budget := p.valueBudget(key, headers)
 	if budget <= 0 {
 		// Fit treats a non-positive limit as no limit.
 		p.metrics.tooLarge.Inc()
-		return fmt.Errorf("kafka: publish exchange %s: %w: key and headers alone exceed %d bytes", x.ID, capture.ErrTooLarge, p.maxRecordBytes)
+		err := fmt.Errorf("kafka: publish exchange %s: %w: key and headers alone exceed %d bytes", x.ID, capture.ErrTooLarge, p.maxRecordBytes)
+		endProduceSpan(span, err)
+		return err
 	}
 	value, err := x.Fit(budget)
 	if err != nil {
@@ -230,22 +252,55 @@ func (p *Producer) Publish(ctx context.Context, x *capture.Exchange) error {
 		} else {
 			p.metrics.failed.Inc()
 		}
-		return fmt.Errorf("kafka: publish exchange %s: %w", x.ID, err)
+		err = fmt.Errorf("kafka: publish exchange %s: %w", x.ID, err)
+		endProduceSpan(span, err)
+		return err
 	}
-	if err := p.produce(newRecord(p.topic, x, value), start); err != nil {
+	if err := p.produce(newRecord(p.topic, key, headers, value, x.Timing.StartedAt), span, start); err != nil {
 		return err
 	}
 	p.metrics.recordBytes.Observe(float64(len(value)))
 	return nil
 }
 
+// startProduceSpan starts the produce span for a record with key as a child
+// of the span in ctx. The tracer comes from the parent span's own provider
+// when the parent is recording, so the child lands in the same pipeline, and
+// from the global provider otherwise.
+func (p *Producer) startProduceSpan(ctx context.Context, key []byte) (context.Context, trace.Span) {
+	tp := otel.GetTracerProvider()
+	if parent := trace.SpanFromContext(ctx); parent.IsRecording() {
+		tp = parent.TracerProvider()
+	}
+	return tp.Tracer(tracerName).Start(ctx, produceSpanName,
+		trace.WithSpanKind(trace.SpanKindProducer),
+		trace.WithAttributes(
+			semconv.MessagingSystemKafka,
+			semconv.MessagingDestinationName(p.topic),
+			semconv.MessagingKafkaMessageKey(string(key)),
+		),
+	)
+}
+
+// endProduceSpan ends span, recording err when the record was not stored.
+// It also runs inside the delivery promise, so it does nothing slow.
+func endProduceSpan(span trace.Span, err error) {
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "record not delivered")
+	}
+	span.End()
+}
+
 // produce buffers r in the client unless the producer is closed or full.
-// start is when Publish was called.
-func (p *Producer) produce(r *kgo.Record, start time.Time) error {
+// span is r's produce span, ended here on failure and in the promise
+// otherwise; start is when Publish was called.
+func (p *Producer) produce(r *kgo.Record, span trace.Span, start time.Time) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.closed.Load() {
 		p.metrics.failed.Inc()
+		endProduceSpan(span, errClosed)
 		return errClosed
 	}
 	// TryProduce reports a full buffer only to the promise, after Publish
@@ -254,6 +309,7 @@ func (p *Producer) produce(r *kgo.Record, start time.Time) error {
 	if p.bufferFull(userSize(r)) {
 		p.metrics.backpressure.Inc()
 		p.unlinger()
+		endProduceSpan(span, ErrBackpressure)
 		return ErrBackpressure
 	}
 	// franz-go fails a batch once its first record's context is done, with
@@ -268,7 +324,7 @@ func (p *Producer) produce(r *kgo.Record, start time.Time) error {
 		if cancel != nil {
 			cancel()
 		}
-		p.delivered(err, time.Since(start))
+		p.delivered(span, err, time.Since(start))
 	})
 	return nil
 }
@@ -307,14 +363,15 @@ func (p *Producer) unlinger() {
 	}()
 }
 
-func newRecord(topic string, x *capture.Exchange, value []byte) *kgo.Record {
-	headers := x.RecordHeaders()
+// newRecord builds the record for an exchange encoded as value, with the
+// request start (or now, when it is unknown) as the record timestamp.
+func newRecord(topic string, key []byte, headers []capture.RecordHeader, value []byte, started time.Time) *kgo.Record {
 	r := &kgo.Record{
 		Topic:     topic,
-		Key:       x.Key(),
+		Key:       key,
 		Value:     value,
 		Headers:   make([]kgo.RecordHeader, len(headers)),
-		Timestamp: x.Timing.StartedAt,
+		Timestamp: started,
 	}
 	for i, h := range headers {
 		r.Headers[i] = kgo.RecordHeader{Key: h.Key, Value: h.Value}
@@ -328,16 +385,19 @@ func newRecord(topic string, x *capture.Exchange, value []byte) *kgo.Record {
 // delivered is the produce promise. franz-go runs promises one at a time on
 // its own goroutine, so it has to be quick, and it must never take p.mu: a
 // Publish holding p.mu inside TryProduce may be waiting on promise progress.
-func (p *Producer) delivered(err error, elapsed time.Duration) {
+// It ends the record's produce span, with the error when there is one.
+func (p *Producer) delivered(span trace.Span, err error, elapsed time.Duration) {
 	switch {
 	case err == nil:
 		p.metrics.ok.Inc()
 		p.metrics.produceSeconds.Observe(elapsed.Seconds())
+		span.End()
 		return
 	case errors.Is(err, kgo.ErrMaxBuffered):
 		// Unreachable unless extra options lower the client's limits below
 		// the ones bufferFull checks.
 		p.metrics.backpressure.Inc()
+		endProduceSpan(span, err)
 		return
 	case errors.Is(err, kerr.MessageTooLarge):
 		// The broker's max.message.bytes is below max_record_bytes.
@@ -349,8 +409,11 @@ func (p *Producer) delivered(err error, elapsed time.Duration) {
 	default:
 		p.metrics.failed.Inc()
 	}
+	endProduceSpan(span, err)
 	if ok, suppressed := p.errLog.allow(); ok {
-		p.log.Error("kafka produce failed", "topic", p.topic, "error", err, "suppressed", suppressed)
+		// Logged under the span so the line carries the record's trace id.
+		p.log.ErrorContext(trace.ContextWithSpan(context.Background(), span),
+			"kafka produce failed", "topic", p.topic, "error", err, "suppressed", suppressed)
 	}
 }
 
