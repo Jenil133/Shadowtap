@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "_meta": {
+    "managed_by": "shadowtap-indexer",
+    "description": "OpenTelemetry log records, correlated with spans through trace.id and span.id."
+  },
+  "index_patterns": ["logs-shadowtap-*"],
+  "data_stream": {},
+  "priority": 500,
+  "composed_of": ["shadowtap-settings", "shadowtap-common"],
+  "template": {
+    "mappings": {
+      "properties": {
+        "@timestamp": { "type": "date_nanos" },
+        "message": { "type": "text" },
+        "body": {
+          "properties": {
+            "structured": { "type": "flattened", "ignore_above": 1024 }
+          }
+        },
+        "log": {
+          "properties": {
+            "level": { "type": "keyword" },
+            "severity_number": { "type": "integer" },
+            "observed_timestamp": { "type": "date_nanos" },
+            "flags": { "type": "integer" }
+          }
+        },
+        "event": {
+          "properties": {
+            "name": { "type": "keyword", "ignore_above": 1024 }
+          }
+        },
+        "scope": {
+          "properties": {
+            "name": { "type": "keyword" },
+            "version": { "type": "keyword" }
+          }
+        },
+        "dropped": {
+          "properties": {
+            "attributes": { "type": "integer" }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,26 @@
+# shadowtap-indexer: Kafka (captures, diffs, OpenTelemetry spans and logs) -> Elasticsearch.
+#
+# Prerequisites (not part of this kustomization):
+#   - the shadowtap namespace: ../base
+#   - the topics: ../kafka-topic.yaml (Strimzi) or your own tooling
+#   - Elasticsearch reachable at the URL in configmap.yaml, and the credentials Secret
+#     shadowtap-elasticsearch (see secret.example.yaml)
+#   - the Collector for the indexer's own traces: ../../otel-collector
+#
+#   kubectl kustomize deploy/k8s/indexer     # render
+#   kubectl apply -k deploy/k8s/indexer      # install
+#
+# Pin a release in an overlay with an images: entry for ghcr.io/jenil133/shadowtap-indexer.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: shadowtap
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: shadowtap
+    includeSelectors: false
+    includeTemplates: true
+resources:
+  - serviceaccount.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml

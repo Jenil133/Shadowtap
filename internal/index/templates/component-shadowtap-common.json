@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "_meta": {
+    "managed_by": "shadowtap-indexer",
+    "description": "Fields shared by every Shadowtap document: trace correlation, service identity, attribute maps and Kafka provenance."
+  },
+  "template": {
+    "mappings": {
+      "dynamic": false,
+      "date_detection": false,
+      "properties": {
+        "trace": {
+          "properties": {
+            "id": { "type": "keyword" }
+          }
+        },
+        "span": {
+          "properties": {
+            "id": { "type": "keyword" }
+          }
+        },
+        "parent": {
+          "properties": {
+            "id": { "type": "keyword" }
+          }
+        },
+        "service": {
+          "properties": {
+            "name": { "type": "keyword" },
+            "version": { "type": "keyword" },
+            "namespace": { "type": "keyword" },
+            "instance": {
+              "properties": {
+                "id": { "type": "keyword" }
+              }
+            }
+          }
+        },
+        "attributes": { "type": "flattened", "ignore_above": 1024 },
+        "resource": {
+          "properties": {
+            "attributes": { "type": "flattened", "ignore_above": 1024 }
+          }
+        },
+        "propagation": {
+          "properties": {
+            "traceparent": { "type": "keyword" },
+            "trace": {
+              "properties": {
+                "id": { "type": "keyword" }
+              }
+            },
+            "span": {
+              "properties": {
+                "id": { "type": "keyword" }
+              }
+            },
+            "sampled": { "type": "boolean" }
+          }
+        },
+        "kafka": {
+          "properties": {
+            "topic": { "type": "keyword" },
+            "partition": { "type": "integer" },
+            "offset": { "type": "long" },
+            "timestamp": { "type": "date" }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,137 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shadowtap-indexer
+  labels:
+    app.kubernetes.io/name: shadowtap-indexer
+    app.kubernetes.io/component: indexer
+spec:
+  # Consumer group members: scale up to the partition count of the busiest topic.
+  replicas: 2
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: shadowtap-indexer
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: shadowtap-indexer
+        app.kubernetes.io/component: indexer
+        app: shadowtap-indexer
+        sidecar.istio.io/inject: "true"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9091"
+        prometheus.io/path: /metrics
+        # Start only once the sidecar can reach Kafka and Elasticsearch, and keep its outbound
+        # path up while the last batch is flushed and committed on shutdown.
+        proxy.istio.io/config: |
+          holdApplicationUntilProxyStarts: true
+          terminationDrainDuration: 30s
+    spec:
+      serviceAccountName: shadowtap-indexer
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      # shutdown_timeout_ms (20 s) flushes the in-flight batch and commits before the pod is
+      # killed.
+      terminationGracePeriodSeconds: 35
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532 # distroless "nonroot"
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: shadowtap-indexer
+      containers:
+        - name: indexer
+          image: ghcr.io/jenil133/shadowtap-indexer:latest
+          args: ["--config", "/etc/shadowtap/indexer.yaml"]
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            # Elasticsearch credentials; the pod does not start until the Secret exists
+            # (see secret.example.yaml).
+            - name: SHADOWTAP_ES_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: shadowtap-elasticsearch
+                  key: username
+            - name: SHADOWTAP_ES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: shadowtap-elasticsearch
+                  key: password
+            # ~90% of limits.memory, so the GC tightens before the container is OOM-killed.
+            - name: GOMEMLIMIT
+              value: 450MiB
+          ports:
+            - name: http-admin
+              containerPort: 9091
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 9091
+            periodSeconds: 2
+            failureThreshold: 30
+          # Ready = consumer group joined and Elasticsearch reachable.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 9091
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9091
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          # Memory budget: batch.max_bytes (5 MiB) x in-flight batches + Kafka fetch buffers
+          # (fetch_max_bytes 16 MiB) + Go runtime.
+          resources:
+            requests:
+              cpu: 200m
+              memory: 192Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: config
+              mountPath: /etc/shadowtap
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: shadowtap-indexer-config

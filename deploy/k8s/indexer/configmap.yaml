@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shadowtap-indexer-config
+  labels:
+    app.kubernetes.io/name: shadowtap-indexer
+    app.kubernetes.io/component: indexer
+data:
+  # Unknown keys are rejected at startup; the pods read this file only when they start, so run
+  # `kubectl -n shadowtap rollout restart deployment/shadowtap-indexer` after changing it.
+  # Credentials never go here: the Elasticsearch user and password come from the Secret
+  # shadowtap-elasticsearch through SHADOWTAP_ES_USERNAME / SHADOWTAP_ES_PASSWORD (or an API key
+  # through SHADOWTAP_ES_API_KEY), a Kafka SASL password through SHADOWTAP_KAFKA_SASL_PASSWORD.
+  indexer.yaml: |
+    log:
+      level: info
+      format: json
+
+    listen:
+      http: ":9091"
+
+    kafka:
+      brokers: ["shadowtap-kafka-bootstrap.kafka.svc:9092"]
+      client_id: shadowtap-indexer
+      group: shadowtap-indexer
+      start_offset: earliest
+      topics:
+        captures: shadowtap.captures.v1
+        diffs: shadowtap.diffs.v1
+        spans: shadowtap.otel.spans.v1
+        logs: shadowtap.otel.logs.v1
+        dlq: shadowtap.indexer.dlq.v1
+      session_timeout_ms: 45000
+      rebalance_timeout_ms: 60000
+      fetch_max_bytes: 16777216
+      max_record_bytes: 900000
+      tls:
+        enabled: false
+      sasl:
+        mechanism: ""
+
+    elasticsearch:
+      urls: ["http://elasticsearch.shadowtap.svc:9200"]
+      bootstrap: true  # index templates, ILM policy and data streams are created at startup
+      compress: true
+      request_timeout_ms: 30000
+      tls: {}
+
+    indices:
+      spans: traces-shadowtap-default
+      logs: logs-shadowtap-default
+      captures: shadowtap-captures
+      diffs: shadowtap-diffs
+
+    batch:
+      max_records: 1000
+      max_bytes: 5242880
+      max_interval_ms: 1000
+
+    retry:
+      max_attempts: 5
+      initial_backoff_ms: 200
+      max_backoff_ms: 10000
+
+    telemetry:
+      enabled: true
+      endpoint: otel-collector.shadowtap.svc:4317
+      insecure: true
+      service_name: shadowtap-indexer
+      sample_ratio: 0.1
+      timeout_ms: 0
+      metrics: false
+
+    shutdown_timeout_ms: 20000

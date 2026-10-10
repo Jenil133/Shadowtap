@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "_meta": {
+    "managed_by": "shadowtap-indexer",
+    "description": "Scrubbed HTTP exchanges captured at the sidecar. Bodies are kept in _source only."
+  },
+  "index_patterns": ["shadowtap-captures*"],
+  "data_stream": {},
+  "priority": 500,
+  "composed_of": ["shadowtap-settings", "shadowtap-common"],
+  "template": {
+    "mappings": {
+      "properties": {
+        "@timestamp": { "type": "date" },
+        "event": {
+          "properties": {
+            "duration": { "type": "long" },
+            "start": { "type": "date" },
+            "end": { "type": "date" }
+          }
+        },
+        "capture": {
+          "properties": {
+            "id": { "type": "keyword" },
+            "schema_version": { "type": "integer" },
+            "sampling": {
+              "properties": {
+                "rate": { "type": "float" },
+                "rule": { "type": "keyword" },
+                "key_source": { "type": "keyword" }
+              }
+            },
+            "timing": {
+              "properties": {
+                "response_started_at": { "type": "date" },
+                "completed_at": { "type": "date" },
+                "duration_us": { "type": "long" },
+                "total_us": { "type": "long" }
+              }
+            }
+          }
+        },
+        "source": {
+          "properties": {
+            "tap": { "type": "keyword" },
+            "mode": { "type": "keyword" }
+          }
+        },
+        "tap": {
+          "properties": {
+            "name": { "type": "keyword" },
+            "mode": { "type": "keyword" }
+          }
+        },
+        "http": {
+          "properties": {
+            "route": { "type": "keyword", "ignore_above": 1024 },
+            "request": {
+              "properties": {
+                "id": { "type": "keyword" },
+                "method": { "type": "keyword" },
+                "mime_type": { "type": "keyword" },
+                "headers": { "type": "flattened", "ignore_above": 1024 },
+                "trailers": { "type": "flattened", "ignore_above": 1024 },
+                "body": {
+                  "properties": {
+                    "bytes": { "type": "long" },
+                    "truncated": { "type": "boolean" },
+                    "omitted": { "type": "keyword" },
+                    "encoding": { "type": "keyword" },
+                    "decoded_from": { "type": "keyword" },
+                    "content": { "type": "keyword", "index": false, "doc_values": false }
+                  }
+                }
+              }
+            },
+            "response": {
+              "properties": {
+                "status_code": { "type": "integer" },
+                "mime_type": { "type": "keyword" },
+                "headers": { "type": "flattened", "ignore_above": 1024 },
+                "trailers": { "type": "flattened", "ignore_above": 1024 },
+                "body": {
+                  "properties": {
+                    "bytes": { "type": "long" },
+                    "truncated": { "type": "boolean" },
+                    "omitted": { "type": "keyword" },
+                    "encoding": { "type": "keyword" },
+                    "decoded_from": { "type": "keyword" },
+                    "content": { "type": "keyword", "index": false, "doc_values": false }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "url": {
+          "properties": {
+            "path": { "type": "keyword", "ignore_above": 2048 },
+            "query": { "type": "keyword", "ignore_above": 2048 },
+            "original": { "type": "keyword", "index": false, "doc_values": false },
+            "scheme": { "type": "keyword" },
+            "domain": { "type": "keyword" },
+            "port": { "type": "integer" }
+          }
+        },
+        "redactions": { "type": "object", "dynamic": true },
+        "redactions_total": { "type": "integer" }
+      }
+    }
+  }
+}

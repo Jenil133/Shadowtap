@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: shadowtap-indexer
+  labels:
+    app.kubernetes.io/name: shadowtap-indexer
+    app.kubernetes.io/component: indexer
+spec:
+  selector:
+    app.kubernetes.io/name: shadowtap-indexer
+  ports:
+    # Admin only: /healthz, /readyz and /metrics. The indexer takes no traffic; it consumes.
+    - name: http-admin
+      port: 9091
+      targetPort: http-admin
+      protocol: TCP
+      appProtocol: http

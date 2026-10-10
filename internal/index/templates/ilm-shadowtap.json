@@ -1,0 +1,28 @@
+{
+  "policy": {
+    "_meta": {
+      "managed_by": "shadowtap-indexer",
+      "description": "Shadowtap telemetry: roll over daily or at 10 GB per shard, delete after 7 days."
+    },
+    "phases": {
+      "hot": {
+        "min_age": "0ms",
+        "actions": {
+          "rollover": {
+            "max_age": "1d",
+            "max_primary_shard_size": "10gb"
+          },
+          "set_priority": {
+            "priority": 100
+          }
+        }
+      },
+      "delete": {
+        "min_age": "7d",
+        "actions": {
+          "delete": {}
+        }
+      }
+    }
+  }
+}

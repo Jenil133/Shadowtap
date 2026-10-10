@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "_meta": {
+    "managed_by": "shadowtap-indexer",
+    "description": "Index settings shared by every Shadowtap data stream."
+  },
+  "template": {
+    "settings": {
+      "index": {
+        "lifecycle": {
+          "name": "shadowtap"
+        },
+        "number_of_shards": "1",
+        "auto_expand_replicas": "0-1",
+        "codec": "best_compression",
+        "mapping": {
+          "total_fields": {
+            "limit": "2000"
+          },
+          "ignore_malformed": "true"
+        }
+      }
+    }
+  }
+}
