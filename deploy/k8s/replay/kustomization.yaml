@@ -1,0 +1,15 @@
+# Replay: the demo's baseline (v1) and candidate (v2) deployments and a replay Job.
+# Needs ../base (tap ConfigMap, scrub key Secret), ../demo and the diffs topic
+# (../kafka-topic.yaml).
+#
+#   kubectl apply -k deploy/k8s/replay
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: shadowtap
+    includeSelectors: false
+    includeTemplates: true
+resources:
+  - targets.yaml
+  - replay-job.yaml

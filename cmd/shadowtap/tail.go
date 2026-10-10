@@ -23,7 +23,7 @@ import (
 const maxSummaryPath = 120
 
 type tailOptions struct {
-	brokers    string
+	conn       connFlags
 	topic      string
 	from       string
 	until      string
@@ -48,13 +48,9 @@ type filter struct {
 
 func runTail(ctx context.Context, args []string, getenv func(string) string, stdout, stderr io.Writer) int {
 	var o tailOptions
-	defaultBrokers := getenv("SHADOWTAP_KAFKA_BROKERS")
-	if defaultBrokers == "" {
-		defaultBrokers = "localhost:9092"
-	}
 	fs := flag.NewFlagSet("shadowtap tail", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	fs.StringVar(&o.brokers, "brokers", defaultBrokers, "comma-separated Kafka seed brokers")
+	o.conn.register(fs, getenv)
 	fs.StringVar(&o.topic, "topic", capture.DefaultTopic, "captures topic")
 	fs.StringVar(&o.from, "from", "latest", "start position: earliest, latest, an RFC3339 time, or a negative duration such as -15m")
 	fs.StringVar(&o.until, "until", "", "skip captures that started after this RFC3339 time")
@@ -66,7 +62,8 @@ func runTail(ctx context.Context, args []string, getenv func(string) string, std
 	fs.StringVar(&o.method, "method", "", "only this HTTP method")
 	fs.StringVar(&o.status, "status", "", "only this status code (201) or class (5xx)")
 	fs.StringVar(&o.pathPrefix, "path-prefix", "", "only paths starting with this prefix")
-	fs.BoolVar(&o.checkPII, "check-pii", false, "audit captures for unscrubbed PII instead of printing them; exit 3 if any is found")
+	fs.BoolVar(&o.checkPII, "check-pii", false,
+		"audit captures for unscrubbed PII instead of printing them; exit 3 if any is found or if a record cannot be decoded (and so was not audited)")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return exitOK
@@ -89,7 +86,10 @@ func runTail(ctx context.Context, args []string, getenv func(string) string, std
 	}
 
 	cfg := kafka.DefaultConfig()
-	cfg.Brokers = splitList(o.brokers)
+	if err := o.conn.apply(&cfg, getenv); err != nil {
+		fmt.Fprintf(stderr, "shadowtap tail: %v\n", err)
+		return exitUsage
+	}
 	cfg.Topic = o.topic
 	cfg.ClientID = "shadowtap-cli"
 	consumer, err := kafka.NewConsumer(cfg, kafka.ConsumeOptions{Start: o.from})
@@ -143,6 +143,12 @@ func runTail(ctx context.Context, args []string, getenv func(string) string, std
 		}
 		if total > 0 {
 			fmt.Fprintf(stderr, "PII audit FAILED: %d findings (%s) in %d captures\n", total, formatCounts(findings), matched)
+			return exitPII
+		}
+		if decodeErrors > 0 {
+			// A record that cannot be decoded cannot be audited, so a clean
+			// verdict would be unfounded.
+			fmt.Fprintf(stderr, "PII audit FAILED: %d records could not be decoded and were not audited\n", decodeErrors)
 			return exitPII
 		}
 		fmt.Fprintf(stderr, "PII audit passed: %d captures, no unscrubbed personal data found\n", matched)
@@ -240,10 +246,15 @@ func summary(x *capture.Exchange) string {
 		path = path[:maxSummaryPath] + "…"
 	}
 	var b strings.Builder
+	// The first duration is time to response headers (duration_us); the
+	// total, including the response body, follows when it is known.
 	fmt.Fprintf(&b, "%s %s %s %s %s -> %d %.1fms",
 		x.Timing.StartedAt.UTC().Format("2006-01-02T15:04:05.000Z"),
 		x.Service, x.Source.Mode, x.Request.Method, path, x.Response.Status,
 		float64(x.Timing.DurationMicros)/1000)
+	if total := x.Timing.TotalMicros(); total > 0 {
+		fmt.Fprintf(&b, " total=%.1fms", float64(total)/1000)
+	}
 	if x.TraceID != "" {
 		fmt.Fprintf(&b, " trace=%s", x.TraceID)
 	}

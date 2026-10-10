@@ -1,0 +1,388 @@
+{
+  "traces-shadowtap-default": [
+    {
+      "@timestamp": "2026-10-03T09:00:00Z",
+      "trace.id": "4bf92f3577b34da6a3ce929d0e0e4736",
+      "span.id": "0a1b2c3d4e5f6071",
+      "parent.id": "9f8e7d6c5b4a3928",
+      "span.name": "gateway.demo.svc.cluster.local:8080/*",
+      "span.kind": "SERVER",
+      "service.name": "gateway.demo",
+      "event.duration": 24000000,
+      "event.end": "2026-10-03T09:00:00.024Z",
+      "status.code": "UNSET",
+      "http.request.method": "GET",
+      "url.path": "/api/users/42/orders",
+      "http.response.status_code": 200,
+      "resource.attributes": {"k8s.namespace.name": "demo", "k8s.pod.name": "gateway-7c9d8-x2k4p", "service.name": "gateway.demo"},
+      "attributes": {"istio.canonical_service": "gateway", "upstream_cluster": "inbound|8080||", "peer.address": "10.244.1.7", "http.request.method": "GET", "url.path": "/api/users/42/orders", "http.response.status_code": 200},
+      "kafka": {"topic": "shadowtap.otel.spans.v1", "partition": 2, "offset": 90412, "timestamp": "2026-10-03T09:00:01.102Z"}
+    },
+    {
+      "@timestamp": "2026-10-03T09:00:00.0004Z",
+      "trace": {"id": "4bf92f3577b34da6a3ce929d0e0e4736"},
+      "span": {"id": "b2c3d4e5f6071829", "name": "GET /api/users/{id}/orders", "kind": "SERVER"},
+      "parent": {"id": "0a1b2c3d4e5f6071"},
+      "event": {"duration": 23200000, "end": "2026-10-03T09:00:00.0236Z"},
+      "service": {"name": "gateway", "version": "v1", "instance": {"id": "gateway-7c9d8-x2k4p"}},
+      "resource": {"attributes": {"service.name": "gateway", "service.version": "v1", "k8s.namespace.name": "demo", "k8s.pod.name": "gateway-7c9d8-x2k4p"}},
+      "scope": {"name": "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp", "version": "0.72.0"},
+      "status": {"code": "OK"},
+      "http": {"request": {"method": "GET"}, "response": {"status_code": 200}, "route": "/api/users/{id}/orders"},
+      "url": {"path": "/api/users/42/orders", "scheme": "http"},
+      "attributes": {"http.request.method": "GET", "http.response.status_code": 200, "http.route": "/api/users/{id}/orders", "url.path": "/api/users/42/orders", "url.scheme": "http", "server.address": "gateway.demo.svc.cluster.local", "user_agent.original": "loadgen/1.0"},
+      "kafka": {"topic": "shadowtap.otel.spans.v1", "partition": 2, "offset": 90413, "timestamp": "2026-10-03T09:00:01.102Z"}
+    },
+    {
+      "@timestamp": "2026-10-03T09:00:00.001Z",
+      "trace": {"id": "4bf92f3577b34da6a3ce929d0e0e4736"},
+      "span": {"id": "c3d4e5f607182930", "name": "GET users", "kind": "CLIENT"},
+      "parent": {"id": "b2c3d4e5f6071829"},
+      "event": {"duration": 6500000, "end": "2026-10-03T09:00:00.0075Z"},
+      "service": {"name": "gateway", "version": "v1"},
+      "status": {"code": "OK"},
+      "http": {"request": {"method": "GET"}, "response": {"status_code": 200}},
+      "url": {"path": "/api/users/42", "full": "http://users.demo.svc.cluster.local:8080/api/users/42"},
+      "server": {"address": "users.demo.svc.cluster.local", "port": 8080},
+      "attributes": {"http.request.method": "GET", "http.response.status_code": 200, "url.full": "http://users.demo.svc.cluster.local:8080/api/users/42", "url.path": "/api/users/42", "server.address": "users.demo.svc.cluster.local", "server.port": 8080},
+      "kafka": {"topic": "shadowtap.otel.spans.v1", "partition": 2, "offset": 90414, "timestamp": "2026-10-03T09:00:01.102Z"}
+    },
+    {
+      "@timestamp": "2026-10-03T09:00:00.0016Z",
+      "trace.id": "4bf92f3577b34da6a3ce929d0e0e4736",
+      "span.id": "d4e5f60718293a4b",
+      "parent.id": "c3d4e5f607182930",
+      "span.name": "users.demo.svc.cluster.local:8080/*",
+      "span.kind": "SERVER",
+      "service.name": "users.demo",
+      "event.duration": 5400000,
+      "status.code": "UNSET",
+      "http.request.method": "GET",
+      "url.path": "/api/users/42",
+      "http.response.status_code": 200,
+      "kafka": {"topic": "shadowtap.otel.spans.v1", "partition": 2, "offset": 90415, "timestamp": "2026-10-03T09:00:01.102Z"}
+    },
+    {
+      "@timestamp": "2026-10-03T09:00:00.002Z",
+      "trace": {"id": "4bf92f3577b34da6a3ce929d0e0e4736"},
+      "span": {"id": "e5f60718293a4b5c", "name": "GET /api/users/{id}", "kind": "SERVER"},
+      "parent": {"id": "d4e5f60718293a4b"},
+      "event": {"duration": 4600000, "end": "2026-10-03T09:00:00.0066Z"},
+      "service": {"name": "users", "version": "v1", "instance": {"id": "users-5f6b7-q9r2t"}},
+      "status": {"code": "OK"},
+      "http": {"request": {"method": "GET"}, "response": {"status_code": 200}, "route": "/api/users/{id}"},
+      "url": {"path": "/api/users/42"},
+      "attributes": {"http.request.method": "GET", "http.response.status_code": 200, "http.route": "/api/users/{id}", "url.path": "/api/users/42"},
+      "kafka": {"topic": "shadowtap.otel.spans.v1", "partition": 2, "offset": 90416, "timestamp": "2026-10-03T09:00:01.102Z"}
+    },
+    {
+      "@timestamp": "2026-10-03T09:00:00.008Z",
+      "trace": {"id": "4bf92f3577b34da6a3ce929d0e0e4736"},
+      "span": {"id": "f60718293a4b5c6d", "name": "GET orders", "kind": "CLIENT"},
+      "parent": {"id": "b2c3d4e5f6071829"},
+      "event": {"duration": 14000000, "end": "2026-10-03T09:00:00.022Z"},
+      "service": {"name": "gateway", "version": "v1"},
+      "status": {"code": "OK"},
+      "http": {"request": {"method": "GET"}, "response": {"status_code": 200}},
+      "url": {"path": "/api/orders"},
+      "server": {"address": "orders.demo.svc.cluster.local", "port": 8080},
+      "attributes": {"http.request.method": "GET", "http.response.status_code": 200, "url.path": "/api/orders", "server.address": "orders.demo.svc.cluster.local", "server.port": 8080},
+      "kafka": {"topic": "shadowtap.otel.spans.v1", "partition": 2, "offset": 90417, "timestamp": "2026-10-03T09:00:01.102Z"}
+    },
+    {
+      "@timestamp": "2026-10-03T09:00:00.0085Z",
+      "trace.id": "4bf92f3577b34da6a3ce929d0e0e4736",
+      "span.id": "0718293a4b5c6d7e",
+      "parent.id": "f60718293a4b5c6d",
+      "span.name": "orders.demo.svc.cluster.local:8080/*",
+      "span.kind": "SERVER",
+      "service.name": "orders.demo",
+      "event.duration": 13000000,
+      "status.code": "UNSET",
+      "http.request.method": "GET",
+      "url.path": "/api/orders",
+      "http.response.status_code": 200,
+      "kafka": {"topic": "shadowtap.otel.spans.v1", "partition": 2, "offset": 90418, "timestamp": "2026-10-03T09:00:01.102Z"}
+    },
+    {
+      "@timestamp": "2026-10-03T09:00:00.009Z",
+      "trace": {"id": "4bf92f3577b34da6a3ce929d0e0e4736"},
+      "span": {"id": "18293a4b5c6d7e8f", "name": "GET /api/orders", "kind": "SERVER"},
+      "parent": {"id": "0718293a4b5c6d7e"},
+      "event": {"duration": 12000000, "end": "2026-10-03T09:00:00.021Z"},
+      "service": {"name": "orders", "version": "v1", "instance": {"id": "orders-8d9e0-m3n4p"}},
+      "status": {"code": "OK"},
+      "http": {"request": {"method": "GET"}, "response": {"status_code": 200}, "route": "/api/orders"},
+      "url": {"path": "/api/orders"},
+      "attributes": {"http.request.method": "GET", "http.response.status_code": 200, "http.route": "/api/orders", "url.path": "/api/orders"},
+      "kafka": {"topic": "shadowtap.otel.spans.v1", "partition": 2, "offset": 90419, "timestamp": "2026-10-03T09:00:01.102Z"}
+    },
+    {
+      "@timestamp": "2026-10-03T09:00:00.0095Z",
+      "trace": {"id": "4bf92f3577b34da6a3ce929d0e0e4736"},
+      "span": {"id": "293a4b5c6d7e8f90", "name": "cache GET user-orders", "kind": "CLIENT"},
+      "parent": {"id": "18293a4b5c6d7e8f"},
+      "event": {"duration": 10000000, "end": "2026-10-03T09:00:00.0195Z"},
+      "service": {"name": "orders", "version": "v1"},
+      "status": {"code": "ERROR", "message": "deadline exceeded"},
+      "attributes": {"db.system": "redis", "db.operation": "GET"},
+      "events": [{"name": "exception", "time": "2026-10-03T09:00:00.0195Z", "attributes": {"exception.type": "context.DeadlineExceeded", "exception.message": "deadline exceeded"}}],
+      "kafka": {"topic": "shadowtap.otel.spans.v1", "partition": 2, "offset": 90420, "timestamp": "2026-10-03T09:00:01.102Z"}
+    },
+    {
+      "@timestamp": "2026-10-03T09:00:00.0001Z",
+      "trace": {"id": "4bf92f3577b34da6a3ce929d0e0e4736"},
+      "span": {"id": "3a4b5c6d7e8f9011", "name": "shadowtap.capture", "kind": "INTERNAL"},
+      "parent": {"id": "9f8e7d6c5b4a3928"},
+      "event": {"duration": 25500000, "end": "2026-10-03T09:00:00.0256Z"},
+      "service": {"name": "shadowtap-tap", "version": "0.3.0", "instance": {"id": "shadowtap-tap-6b7c8-d9e0f"}},
+      "resource": {"attributes": {"service.name": "shadowtap-tap", "service.version": "0.3.0", "k8s.namespace.name": "shadowtap", "k8s.pod.name": "shadowtap-tap-6b7c8-d9e0f"}},
+      "scope": {"name": "github.com/Jenil133/Shadowtap/internal/tap"},
+      "status": {"code": "OK"},
+      "attributes": {
+        "shadowtap.capture.id": "0199b3f0-1234-7abc-8def-0123456789ab",
+        "shadowtap.service": "gateway",
+        "shadowtap.mode": "observe",
+        "shadowtap.sampling.rate": 1
+      },
+      "kafka": {"topic": "shadowtap.otel.spans.v1", "partition": 5, "offset": 4410, "timestamp": "2026-10-03T09:00:01.407Z"}
+    },
+    {
+      "@timestamp": "2026-10-03T09:00:00.025Z",
+      "trace": {"id": "4bf92f3577b34da6a3ce929d0e0e4736"},
+      "span": {"id": "4b5c6d7e8f901122", "name": "shadowtap.captures.v1 publish", "kind": "PRODUCER"},
+      "parent": {"id": "3a4b5c6d7e8f9011"},
+      "event": {"duration": 3000000, "end": "2026-10-03T09:00:00.028Z"},
+      "service": {"name": "shadowtap-tap", "version": "0.3.0"},
+      "status": {"code": "OK"},
+      "attributes": {"messaging.system": "kafka", "messaging.destination.name": "shadowtap.captures.v1", "messaging.kafka.destination.partition": 3},
+      "kafka": {"topic": "shadowtap.otel.spans.v1", "partition": 5, "offset": 4411, "timestamp": "2026-10-03T09:00:01.407Z"}
+    },
+    {
+      "@timestamp": "2026-10-03T10:00:00Z",
+      "trace": {"id": "7d3e8a1b2c4f5e6d7a8b9c0d1e2f3a4b"},
+      "span": {"id": "5c6d7e8f90112233", "name": "shadowtap.replay GET /api/users/{id}/orders", "kind": "CLIENT"},
+      "event": {"duration": 31000000, "end": "2026-10-03T10:00:00.031Z"},
+      "service": {"name": "shadowtap-replay", "version": "0.3.0"},
+      "status": {"code": "OK"},
+      "http": {"request": {"method": "GET"}, "response": {"status_code": 200}},
+      "url": {"path": "/api/users/42/orders", "full": "http://demo-api-candidate.demo.svc.cluster.local:8080/api/users/42/orders"},
+      "links": [{"trace": {"id": "4bf92f3577b34da6a3ce929d0e0e4736"}, "span": {"id": "b2c3d4e5f6071829"}, "attributes": {"shadowtap.link": "original"}}],
+      "attributes": {
+        "http.request.method": "GET",
+        "http.response.status_code": 200,
+        "url.path": "/api/users/42/orders",
+        "shadowtap.run.id": "run-0199b400-5e6f-7a8b-9c0d-ef0123456789",
+        "shadowtap.capture.id": "0199b3f0-1234-7abc-8def-0123456789ab"
+      },
+      "kafka": {"topic": "shadowtap.otel.spans.v1", "partition": 1, "offset": 70, "timestamp": "2026-10-03T10:00:01.001Z"}
+    },
+    {
+      "@timestamp": "2026-10-03T10:00:00.0005Z",
+      "trace": {"id": "7d3e8a1b2c4f5e6d7a8b9c0d1e2f3a4b"},
+      "span": {"id": "6d7e8f9011223344", "name": "GET /api/users/{id}/orders", "kind": "SERVER"},
+      "parent": {"id": "5c6d7e8f90112233"},
+      "event": {"duration": 29000000, "end": "2026-10-03T10:00:00.0295Z"},
+      "service": {"name": "gateway", "version": "v2", "instance": {"id": "demo-api-candidate-7a8b9-c0d1e"}},
+      "resource": {"attributes": {"service.name": "gateway", "service.version": "v2"}},
+      "status": {"code": "OK"},
+      "http": {"request": {"method": "GET"}, "response": {"status_code": 200}, "route": "/api/users/{id}/orders"},
+      "url": {"path": "/api/users/42/orders"},
+      "attributes": {"http.request.method": "GET", "http.response.status_code": 200, "http.route": "/api/users/{id}/orders", "url.path": "/api/users/42/orders"},
+      "kafka": {"topic": "shadowtap.otel.spans.v1", "partition": 1, "offset": 71, "timestamp": "2026-10-03T10:00:01.001Z"}
+    }
+  ],
+  "logs-shadowtap-default": [
+    {
+      "@timestamp": "2026-10-03T09:00:00.0009Z",
+      "trace": {"id": "4bf92f3577b34da6a3ce929d0e0e4736"},
+      "span": {"id": "b2c3d4e5f6071829"},
+      "service": {"name": "gateway", "version": "v1"},
+      "log": {"level": "INFO", "severity_number": 9, "observed_timestamp": "2026-10-03T09:00:00.0009Z"},
+      "message": "proxying to users",
+      "scope": {"name": "github.com/Jenil133/Shadowtap/examples/demo/api"},
+      "attributes": {"http.route": "/api/users/{id}/orders"},
+      "kafka": {"topic": "shadowtap.otel.logs.v1", "partition": 0, "offset": 3301, "timestamp": "2026-10-03T09:00:01.2Z"}
+    },
+    {
+      "@timestamp": "2026-10-03T09:00:00.004Z",
+      "trace": {"id": "4bf92f3577b34da6a3ce929d0e0e4736"},
+      "span": {"id": "e5f60718293a4b5c"},
+      "service": {"name": "users", "version": "v1"},
+      "log": {"level": "INFO", "severity_number": 9},
+      "message": "user loaded",
+      "attributes": {"user.id": "u-42"},
+      "kafka": {"topic": "shadowtap.otel.logs.v1", "partition": 0, "offset": 3302, "timestamp": "2026-10-03T09:00:01.2Z"}
+    },
+    {
+      "@timestamp": "2026-10-03T09:00:00.0194Z",
+      "trace": {"id": "4bf92f3577b34da6a3ce929d0e0e4736"},
+      "span": {"id": "293a4b5c6d7e8f90"},
+      "service": {"name": "orders", "version": "v1"},
+      "log": {"level": "WARN", "severity_number": 13},
+      "message": "cache timeout, reading store",
+      "attributes": {"cache.key": "user-orders:u-42"},
+      "kafka": {"topic": "shadowtap.otel.logs.v1", "partition": 0, "offset": 3303, "timestamp": "2026-10-03T09:00:01.2Z"}
+    },
+    {
+      "@timestamp": "2026-10-03T09:00:00.0205Z",
+      "trace": {"id": "4bf92f3577b34da6a3ce929d0e0e4736"},
+      "span": {"id": "18293a4b5c6d7e8f"},
+      "service": {"name": "orders", "version": "v1"},
+      "log": {"level": "INFO", "severity_number": 9},
+      "message": "orders listed",
+      "attributes": {"count": 3},
+      "kafka": {"topic": "shadowtap.otel.logs.v1", "partition": 0, "offset": 3304, "timestamp": "2026-10-03T09:00:01.2Z"}
+    },
+    {
+      "@timestamp": "2026-10-03T09:00:00.0241Z",
+      "trace": {"id": "4bf92f3577b34da6a3ce929d0e0e4736"},
+      "span": {"id": "0a1b2c3d4e5f6071"},
+      "service": {"name": "gateway.demo"},
+      "log": {"level": "INFO"},
+      "message": "[2026-10-03T09:00:00.000Z] \"GET /api/users/42/orders HTTP/1.1\" 200 - 0 104 24 23 \"-\" \"loadgen/1.0\" \"req-8c1d2e3f\" \"gateway.demo.svc.cluster.local:8080\" \"10.244.1.8:8080\"",
+      "attributes": {"pod": "gateway-7c9d8-x2k4p", "namespace": "demo", "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-0a1b2c3d4e5f6071-01"},
+      "kafka": {"topic": "shadowtap.otel.logs.v1", "partition": 3, "offset": 8120, "timestamp": "2026-10-03T09:00:01.35Z"}
+    },
+    {
+      "@timestamp": "2026-10-03T09:00:00.0278Z",
+      "trace": {"id": "4bf92f3577b34da6a3ce929d0e0e4736"},
+      "span": {"id": "4b5c6d7e8f901122"},
+      "service": {"name": "shadowtap-tap", "version": "0.3.0"},
+      "log": {"level": "INFO", "severity_number": 9},
+      "message": "capture published",
+      "attributes": {"capture.id": "0199b3f0-1234-7abc-8def-0123456789ab", "partition": 3, "offset": 1811},
+      "kafka": {"topic": "shadowtap.otel.logs.v1", "partition": 5, "offset": 1190, "timestamp": "2026-10-03T09:00:01.41Z"}
+    },
+    {
+      "@timestamp": "2026-10-03T09:00:00.00005Z",
+      "trace.id": "4bf92f3577b34da6a3ce929d0e0e4736",
+      "span.id": "ffffffffffffffff",
+      "service.name": "istio-ingressgateway.istio-system",
+      "log.level": "INFO",
+      "message": "accepted request",
+      "kafka": {"topic": "shadowtap.otel.logs.v1", "partition": 3, "offset": 8119, "timestamp": "2026-10-03T09:00:01.35Z"}
+    },
+    {
+      "@timestamp": "2026-10-03T10:00:00.0002Z",
+      "trace": {"id": "7d3e8a1b2c4f5e6d7a8b9c0d1e2f3a4b"},
+      "span": {"id": "5c6d7e8f90112233"},
+      "service": {"name": "shadowtap-replay", "version": "0.3.0"},
+      "log": {"level": "INFO", "severity_number": 9},
+      "message": "replaying capture",
+      "attributes": {"capture.id": "0199b3f0-1234-7abc-8def-0123456789ab", "speed": "4x"},
+      "kafka": {"topic": "shadowtap.otel.logs.v1", "partition": 1, "offset": 12, "timestamp": "2026-10-03T10:00:01.05Z"}
+    }
+  ],
+  "shadowtap-captures": [
+    {
+      "@timestamp": "2026-10-03T09:00:00.0001Z",
+      "event": {"start": "2026-10-03T09:00:00.0001Z", "end": "2026-10-03T09:00:00.0239Z", "duration": 23600000},
+      "capture": {
+        "id": "0199b3f0-1234-7abc-8def-0123456789ab",
+        "schema_version": 1,
+        "sampling": {"rate": 1, "rule": "default", "key_source": "traceparent"},
+        "timing": {"duration_us": 23600, "response_started_at": "2026-10-03T09:00:00.0237Z", "completed_at": "2026-10-03T09:00:00.0239Z", "total_us": 23800}
+      },
+      "trace": {"id": "4bf92f3577b34da6a3ce929d0e0e4736"},
+      "parent": {"id": "9f8e7d6c5b4a3928"},
+      "service": {"name": "gateway"},
+      "source": {"tap": "tap-0", "mode": "observe"},
+      "tap": {"name": "tap-0", "mode": "observe"},
+      "http": {
+        "route": "GET /api/users/{id}/orders",
+        "request": {
+          "method": "GET",
+          "id": "req-8c1d2e3f",
+          "headers": {"accept": ["application/json"], "user-agent": ["loadgen/1.0"], "x-request-id": ["req-8c1d2e3f"]},
+          "body": {"bytes": 0}
+        },
+        "response": {
+          "status_code": 200,
+          "mime_type": "application/json",
+          "headers": {"content-type": ["application/json"], "content-length": ["104"]},
+          "body": {"bytes": 104, "encoding": "utf8", "content": "{\"user\":{\"id\":\"u-42\",\"email\":\"user-0123456789@redacted.invalid\"},\"orders\":[{\"id\":\"o-1\",\"total\":12.5}]}"}
+        }
+      },
+      "url": {"path": "/api/users/42/orders", "original": "/api/users/42/orders", "scheme": "http", "domain": "gateway.demo.svc.cluster.local", "port": 8080},
+      "redactions": {"email": 1, "phone": 1},
+      "redactions_total": 2,
+      "propagation": {"traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-3a4b5c6d7e8f9011-01", "trace": {"id": "4bf92f3577b34da6a3ce929d0e0e4736"}, "span": {"id": "3a4b5c6d7e8f9011"}, "sampled": true},
+      "kafka": {"topic": "shadowtap.captures.v1", "partition": 3, "offset": 1811, "timestamp": "2026-10-03T09:00:00.0001Z"}
+    },
+    {
+      "@timestamp": "2026-10-03T09:05:00Z",
+      "event": {"start": "2026-10-03T09:05:00Z", "duration": 1200000},
+      "capture": {
+        "id": "0199b3f0-ffff-7abc-8def-000000000000",
+        "schema_version": 1,
+        "sampling": {"rate": 1, "rule": "demo-logins", "key_source": "x-request-id"},
+        "timing": {"duration_us": 1200}
+      },
+      "service": {"name": "gateway"},
+      "source": {"tap": "tap-1", "mode": "inline"},
+      "http": {
+        "route": "POST /api/login",
+        "request": {"method": "POST", "id": "req-notrace", "mime_type": "application/json", "body": {"bytes": 5120, "omitted": "too_large"}},
+        "response": {"status_code": 401, "body": {"bytes": 0}}
+      },
+      "url": {"path": "/api/login", "original": "/api/login"},
+      "kafka": {"topic": "shadowtap.captures.v1", "partition": 0, "offset": 77, "timestamp": "2026-10-03T09:05:00Z"}
+    },
+    {
+      "@timestamp": "2026-10-03T09:06:00Z",
+      "event": {"start": "2026-10-03T09:06:00Z", "duration": 2500000},
+      "capture": {
+        "id": "0199b3f0-aaaa-7abc-8def-000000000000",
+        "schema_version": 1,
+        "sampling": {"rate": 0.05, "rule": "default", "key_source": "traceparent"},
+        "timing": {"duration_us": 2500}
+      },
+      "trace": {"id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      "service": {"name": "orders"},
+      "source": {"tap": "tap-0", "mode": "observe"},
+      "http": {
+        "route": "GET /api/orders",
+        "request": {"method": "GET", "id": "req-only-capture", "body": {"bytes": 0}},
+        "response": {"status_code": 200, "mime_type": "application/json", "body": {"bytes": 2, "encoding": "utf8", "content": "[]"}}
+      },
+      "url": {"path": "/api/orders", "original": "/api/orders?page=1", "query": "page=1"},
+      "kafka": {"topic": "shadowtap.captures.v1", "partition": 4, "offset": 902, "timestamp": "2026-10-03T09:06:00Z"}
+    }
+  ],
+  "shadowtap-diffs": [
+    {
+      "@timestamp": "2026-10-03T10:00:00Z",
+      "event": {"start": "2026-10-03T09:00:00.0001Z", "duration": 23600000},
+      "replay": {
+        "run": {"id": "run-0199b400-5e6f-7a8b-9c0d-ef0123456789"},
+        "trace": {"id": "7d3e8a1b2c4f5e6d7a8b9c0d1e2f3a4b"},
+        "sent_at": "2026-10-03T10:00:00Z",
+        "schedule_lag_us": 1200,
+        "http": {"response": {"status_code": 200}},
+        "event": {"duration": 29000000},
+        "baseline": {"status_code": 200}
+      },
+      "capture": {"id": "0199b3f0-1234-7abc-8def-0123456789ab"},
+      "trace": {"id": "4bf92f3577b34da6a3ce929d0e0e4736"},
+      "service": {"name": "gateway"},
+      "http": {"route": "GET /api/users/{id}/orders", "request": {"method": "GET"}, "response": {"status_code": 200}},
+      "url": {"path": "/api/users/42/orders"},
+      "diff": {
+        "schema_version": 1,
+        "class": "body_mismatch",
+        "pointers": ["body:/orders/0/total"],
+        "suppressed_pointers": ["body:/generated_at"],
+        "differences": [
+          {"where": "body", "pointer": "/orders/0/total", "kind": "changed", "prod": "12.5", "candidate": "12.50"},
+          {"where": "body", "pointer": "/generated_at", "kind": "changed", "prod": "2026-10-03T09:00:00Z", "candidate": "2026-10-03T10:00:00Z", "suppressed": "noise"}
+        ],
+        "reported_count": 1,
+        "suppressed_count": 1
+      },
+      "latency": {"prod_us": 23600, "candidate_us": 29000, "baseline_us": 24100},
+      "propagation": {"traceparent": "00-7d3e8a1b2c4f5e6d7a8b9c0d1e2f3a4b-5c6d7e8f90112233-01", "trace": {"id": "7d3e8a1b2c4f5e6d7a8b9c0d1e2f3a4b"}, "span": {"id": "5c6d7e8f90112233"}, "sampled": true},
+      "kafka": {"topic": "shadowtap.diffs.v1", "partition": 2, "offset": 318, "timestamp": "2026-10-03T10:00:00.031Z"}
+    }
+  ]
+}

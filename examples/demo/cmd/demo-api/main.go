@@ -88,7 +88,7 @@ func parseFlags(args []string, output io.Writer) (config, error) {
 	cfg := config{}
 	var level string
 	fs.StringVar(&cfg.addr, "addr", ":8080", "listen address")
-	fs.StringVar(&cfg.apiVersion, "version", api.VersionV1, "API behaviour version (only v1 exists yet)")
+	fs.StringVar(&cfg.apiVersion, "version", api.VersionV1, "API behaviour version: v1, or v2 (a candidate with deliberate regressions)")
 	fs.StringVar(&level, "log-level", "info", "log level: debug, info, warn or error")
 	fs.DurationVar(&cfg.shutdownTimeout, "shutdown-timeout", 10*time.Second, "how long to wait for in-flight requests on shutdown")
 	if err := fs.Parse(args); err != nil {

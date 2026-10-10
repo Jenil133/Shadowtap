@@ -18,12 +18,16 @@ const (
 	exitError = 1
 	exitUsage = 2
 	exitPII   = 3 // tail --check-pii found unscrubbed personal data
+	// replay exits with exitGateFailed (1) when the gate fails; trace exits
+	// with exitNotFound (4) when nothing is indexed for the id.
 )
 
 const usage = `Usage: shadowtap <command> [flags]
 
 Commands:
   tail      print captures from Kafka, or audit them for unscrubbed PII
+  replay    send a window of captures to a candidate build and diff its responses
+  trace     follow one request across every service it touched, from Elasticsearch
   version   print the version
 
 Run "shadowtap <command> -h" for the command's flags.
@@ -44,6 +48,10 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 	switch args[0] {
 	case "tail":
 		return runTail(ctx, args[1:], getenv, stdout, stderr)
+	case "replay":
+		return runReplay(ctx, args[1:], getenv, stdout, stderr)
+	case "trace":
+		return runTrace(ctx, args[1:], getenv, stdout, stderr)
 	case "version", "--version":
 		fmt.Fprintln(stdout, version)
 		return exitOK

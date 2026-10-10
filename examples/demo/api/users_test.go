@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Jenil133/Shadowtap/examples/demo/api"
 )
@@ -17,7 +18,8 @@ func TestNewVersion(t *testing.T) {
 	}{
 		{version: "", wantErr: false},
 		{version: "v1", wantErr: false},
-		{version: "v2", wantErr: true},
+		{version: "v2", wantErr: false},
+		{version: "v3", wantErr: true},
 		{version: "V1", wantErr: true},
 		{version: "latest", wantErr: true},
 	}
@@ -33,8 +35,12 @@ func TestNewVersion(t *testing.T) {
 			if err != nil {
 				t.Fatalf("New(%q): %v", tc.version, err)
 			}
-			if a.Version() != api.VersionV1 {
-				t.Errorf("Version() = %q, want %q", a.Version(), api.VersionV1)
+			want := tc.version
+			if want == "" {
+				want = api.VersionV1
+			}
+			if a.Version() != want {
+				t.Errorf("Version() = %q, want %q", a.Version(), want)
 			}
 		})
 	}
@@ -224,7 +230,7 @@ func TestListUsers(t *testing.T) {
 
 	all := call(t, h, http.MethodGet, "/api/users", nil)
 	wantStatus(t, all, http.StatusOK)
-	if got := decode[api.UserList](t, all); !reflect.DeepEqual(got, api.UserList{Users: seeds, Count: 3, Total: 3}) {
+	if got := decode[api.UserList](t, all); !reflect.DeepEqual(got, api.UserList{Users: seeds, Count: 3, Total: 3, GeneratedAt: fixedNow.Format(time.RFC3339Nano)}) {
 		t.Errorf("list = %+v", got)
 	}
 

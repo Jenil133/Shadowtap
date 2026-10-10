@@ -34,14 +34,25 @@ import (
 	"github.com/Jenil133/Shadowtap/internal/tracectx"
 )
 
-// VersionV1 is the only API version so far. Phase 2 adds "v2", which
-// introduces deliberate regressions for the replayer to catch.
-const VersionV1 = "v1"
+// API versions. VersionV2 is a "candidate build" with deliberate regressions
+// for the replayer to catch:
+//
+//   - users are returned with "phone_number" instead of "phone";
+//   - an invalid order is rejected with 400 instead of 422;
+//   - GET /api/users lists users in descending id order;
+//   - every /api/orders request takes 40 ms longer.
+const (
+	VersionV1 = "v1"
+	VersionV2 = "v2"
+)
+
+// OrdersDelayV2 is the latency VersionV2 adds to /api/orders.
+const OrdersDelayV2 = 40 * time.Millisecond
 
 // Options configures an API. The zero value is valid.
 type Options struct {
-	// Version selects the API behaviour; empty means VersionV1, which is
-	// currently the only accepted value.
+	// Version selects the API behaviour: VersionV1 (the default when empty)
+	// or VersionV2.
 	Version string
 	// Now returns the current time. It dates tokens and bounds dates of
 	// birth. Defaults to time.Now.
@@ -78,8 +89,8 @@ func New(opts Options) (*API, error) {
 	if a.version == "" {
 		a.version = VersionV1
 	}
-	if a.version != VersionV1 {
-		return nil, fmt.Errorf("api: unsupported version %q (supported: %s)", opts.Version, VersionV1)
+	if a.version != VersionV1 && a.version != VersionV2 {
+		return nil, fmt.Errorf("api: unsupported version %q (supported: %s, %s)", opts.Version, VersionV1, VersionV2)
 	}
 	if a.now == nil {
 		a.now = time.Now

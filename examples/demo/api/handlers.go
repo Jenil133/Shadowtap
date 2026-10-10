@@ -45,7 +45,7 @@ func (a *API) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Location", rec.user.Links.Self)
-	a.writeJSON(w, r, http.StatusCreated, rec.user)
+	a.writeJSON(w, r, http.StatusCreated, a.presentUser(rec.user))
 }
 
 func (a *API) listUsers(w http.ResponseWriter, r *http.Request) {
@@ -59,8 +59,17 @@ func (a *API) listUsers(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = n
 	}
-	users, total := a.store.listUsers(q.Get("email"), limit)
-	a.writeJSON(w, r, http.StatusOK, UserList{Users: users, Count: len(users), Total: total})
+	users, total := a.store.listUsers(q.Get("email"), limit, a.version == VersionV2)
+	generated := a.now().UTC().Format(time.RFC3339Nano)
+	if a.version == VersionV2 {
+		list := UserListV2{Users: make([]UserV2, len(users)), Count: len(users), Total: total, GeneratedAt: generated}
+		for i, u := range users {
+			list.Users[i] = userV2(u)
+		}
+		a.writeJSON(w, r, http.StatusOK, list)
+		return
+	}
+	a.writeJSON(w, r, http.StatusOK, UserList{Users: users, Count: len(users), Total: total, GeneratedAt: generated})
 }
 
 func (a *API) getUser(w http.ResponseWriter, r *http.Request) {
@@ -69,7 +78,7 @@ func (a *API) getUser(w http.ResponseWriter, r *http.Request) {
 		a.writeError(w, r, http.StatusNotFound, errUserNotFound.Error())
 		return
 	}
-	a.writeJSON(w, r, http.StatusOK, u)
+	a.writeJSON(w, r, http.StatusOK, a.presentUser(u))
 }
 
 func (a *API) lookupUser(w http.ResponseWriter, r *http.Request) {
@@ -78,17 +87,24 @@ func (a *API) lookupUser(w http.ResponseWriter, r *http.Request) {
 		a.writeError(w, r, http.StatusNotFound, errUserNotFound.Error())
 		return
 	}
-	a.writeJSON(w, r, http.StatusOK, rec.user)
+	a.writeJSON(w, r, http.StatusOK, a.presentUser(rec.user))
 }
 
 func (a *API) createOrder(w http.ResponseWriter, r *http.Request) {
+	if !a.ordersDelay(r) {
+		return
+	}
 	var req CreateOrderRequest
 	if !a.decode(w, r, &req) {
 		return
 	}
 	req.normalize()
 	if err := req.validate(); err != nil {
-		a.writeError(w, r, http.StatusUnprocessableEntity, err.Error())
+		status := http.StatusUnprocessableEntity
+		if a.version == VersionV2 {
+			status = http.StatusBadRequest // regression: wrong status for a validation error
+		}
+		a.writeError(w, r, status, err.Error())
 		return
 	}
 	o, err := a.store.addOrder(&req)
@@ -106,6 +122,9 @@ func (a *API) createOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) getOrder(w http.ResponseWriter, r *http.Request) {
+	if !a.ordersDelay(r) {
+		return
+	}
 	o, ok := a.store.order(r.PathValue("id"))
 	if !ok {
 		a.writeError(w, r, http.StatusNotFound, "order not found")
@@ -146,4 +165,32 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 		TokenType: "Bearer",
 		ExpiresIn: int(tokenTTL / time.Second),
 	})
+}
+
+// presentUser returns u as this version renders it.
+func (a *API) presentUser(u User) any {
+	if a.version == VersionV2 {
+		return userV2(u)
+	}
+	return u
+}
+
+func userV2(u User) UserV2 {
+	return UserV2{User: u, PhoneNumber: u.Phone}
+}
+
+// ordersDelay adds VersionV2's /api/orders latency. It reports false when
+// the client went away while waiting.
+func (a *API) ordersDelay(r *http.Request) bool {
+	if a.version != VersionV2 {
+		return true
+	}
+	t := time.NewTimer(OrdersDelayV2)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return true
+	case <-r.Context().Done():
+		return false
+	}
 }

@@ -1,0 +1,10 @@
+capture without trace context: nothing to correlate
+  started  2026-10-03T09:05:00.000000Z
+  logs 0   captures 1   diffs 0
+
+capture 0199b3f0-ffff-7abc-8def-000000000000
+  2026-10-03T09:05:00.000000Z  gateway  POST /api/login -> 401  1.200ms
+  route "POST /api/login"  request-id req-notrace  tap tap-1 (inline)
+  request body omitted (too_large, 5120 B)   response body none
+
+spans: none indexed for this trace

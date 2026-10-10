@@ -1,0 +1,10 @@
+trace aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  started  2026-10-03T09:06:00.000000Z
+  logs 0   captures 1   diffs 0
+
+capture 0199b3f0-aaaa-7abc-8def-000000000000
+  2026-10-03T09:06:00.000000Z  orders  GET /api/orders -> 200  2.500ms
+  route "GET /api/orders"  request-id req-only-capture  tap tap-0 (observe)
+  request body none   response body application/json 2 B
+
+spans: none indexed for this trace

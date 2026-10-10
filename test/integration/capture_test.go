@@ -1,4 +1,4 @@
-// Package integration runs the Phase 1 capture path in-process: demo API
+// Package integration runs the capture path in-process: demo API
 // traffic → simulated Envoy ext_proc stream (observe and inline modes) → tap →
 // sampler → scrubber → Kafka (kfake) → consumer, and checks that no planted
 // personal data survives anywhere in what was stored.
@@ -95,6 +95,16 @@ func newPipeline(t *testing.T, sc sampling.Config, key string) *pipeline {
 	return &pipeline{client: client, kafka: kcfg, reg: reg}
 }
 
+// boundedCtx returns a context that expires long after any healthy run, so a
+// tap that stops answering fails the test instead of hanging it (taptest also
+// bounds each awaited reply).
+func boundedCtx(t *testing.T, d time.Duration) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), d)
+	t.Cleanup(cancel)
+	return ctx
+}
+
 // collect reads records until want have arrived or quiet passes without one.
 func (p *pipeline) collect(t *testing.T, want int, quiet time.Duration) []kafka.Message {
 	t.Helper()
@@ -145,7 +155,7 @@ func drive(t *testing.T, p *pipeline, n int, seed int64) sent {
 
 	s := sent{byMode: map[string]int{}, ledger: traffic.NewLedger(), statuses: map[int]int{}}
 	gen := traffic.NewGenerator(seed, traffic.People(seed, 40), s.ledger)
-	ctx := context.Background()
+	ctx := boundedCtx(t, 2*time.Minute)
 	for i := range n {
 		req, err := gen.Next(srv.URL)
 		if err != nil {
@@ -326,7 +336,7 @@ func jsonStrings(data []byte) []string {
 
 func TestUnsampledTrafficIsNeverCaptured(t *testing.T) {
 	p := newPipeline(t, sampling.Config{DefaultRate: 0}, scrubKey)
-	ctx := context.Background()
+	ctx := boundedCtx(t, time.Minute)
 	ex := taptest.Exchange{
 		Method: "POST", Scheme: "http", Authority: "demo-api:8080", Path: "/api/users",
 		RequestHeaders:  [][2]string{{"content-type", "application/json"}, {"x-request-id", "r"}},
@@ -379,7 +389,7 @@ func counterSum(t *testing.T, reg *prometheus.Registry, name, label, value strin
 func TestSamplingIsConsistentAcrossServices(t *testing.T) {
 	const traces = 300
 	p := newPipeline(t, sampling.Config{DefaultRate: 0.3}, scrubKey)
-	ctx := context.Background()
+	ctx := boundedCtx(t, time.Minute)
 	for i := range traces {
 		traceID := fmt.Sprintf("%016x%016x", uint64(i)*0x9e3779b97f4a7c15+1, uint64(i)+1)
 		for _, svc := range []string{"gateway", "orders"} {
@@ -419,9 +429,10 @@ func TestPseudonymsAgreeAcrossTapReplicas(t *testing.T) {
 		ResponseHeaders: [][2]string{{"content-type", "application/json"}},
 		ResponseBody:    []byte(`{"id":"u_9","email":"bob@example.com"}`),
 	}
+	ctx := boundedCtx(t, time.Minute)
 	capture1 := func(key string) *capture.Exchange {
 		p := newPipeline(t, sampling.Config{DefaultRate: 1}, key)
-		if _, err := taptest.Run(context.Background(), p.client, ex, taptest.Options{Metadata: map[string]string{serviceHeader: service}}); err != nil {
+		if _, err := taptest.Run(ctx, p.client, ex, taptest.Options{Metadata: map[string]string{serviceHeader: service}}); err != nil {
 			t.Fatal(err)
 		}
 		msgs := p.collect(t, 1, 5*time.Second)

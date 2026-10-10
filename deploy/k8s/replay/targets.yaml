@@ -1,0 +1,150 @@
+# Replay targets for the demo: a fresh deployment of the current production build
+# (baseline, v1) and the build under test (candidate, v2). Neither is selected by the
+# Shadowtap EnvoyFilter (app: demo-api), so replayed traffic is never captured again.
+# Both keep state in memory and start empty, so a replay begins from the same state on both.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-api-baseline
+  namespace: demo
+  labels:
+    app: demo-api-baseline
+    version: v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-api-baseline
+  template:
+    metadata:
+      labels:
+        app: demo-api-baseline
+        version: v1
+    spec:
+      serviceAccountName: demo-api
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: demo-api
+          image: ghcr.io/jenil133/shadowtap-demo-api:latest
+          args: ["--addr", ":8080", "--version", "v1"]
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-api-candidate
+  namespace: demo
+  labels:
+    app: demo-api-candidate
+    version: v2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-api-candidate
+  template:
+    metadata:
+      labels:
+        app: demo-api-candidate
+        version: v2
+    spec:
+      serviceAccountName: demo-api
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: demo-api
+          image: ghcr.io/jenil133/shadowtap-demo-api:latest
+          # v2 carries deliberate regressions for the replay to find.
+          args: ["--addr", ":8080", "--version", "v2"]
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-api-baseline
+  namespace: demo
+  labels:
+    app: demo-api-baseline
+spec:
+  selector:
+    app: demo-api-baseline
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      appProtocol: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-api-candidate
+  namespace: demo
+  labels:
+    app: demo-api-candidate
+spec:
+  selector:
+    app: demo-api-candidate
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      appProtocol: http

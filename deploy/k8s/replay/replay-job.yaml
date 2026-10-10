@@ -1,0 +1,133 @@
+# One replay run: the last 15 minutes of captured demo-api traffic, 4x faster, against the
+# candidate with the baseline for noise suppression. The gate decides the Job's outcome:
+# Complete when it passes, Failed (exit 1) when it does not. Per-exchange results go to
+# shadowtap.diffs.v1; the text report is in the pod log.
+#
+# The replay runs inside the mesh. Its traffic to Kafka and to the demo targets leaves the
+# pod through an Istio sidecar, so mesh-wide STRICT mTLS keeps working and the targets need
+# no PERMISSIVE exception. The sidecar is a Kubernetes native sidecar (an init container
+# with restartPolicy: Always), which the kubelet stops once the replay container exits, so
+# the Job completes with the replay's exit status; a classic sidecar container would keep
+# the pod Running forever. Requirements:
+#
+#   - Kubernetes >= 1.28 with the SidecarContainers feature gate (on by default since 1.29,
+#     GA in 1.33).
+#   - istiod allowed to inject native sidecars: ENABLE_NATIVE_SIDECARS=true on the istiod
+#     Deployment (mesh-wide, Istio >= 1.19), or the per-pod annotation below (Istio >= 1.22).
+#
+# On a mesh that offers neither, set sidecar.istio.io/inject: "false" on the pod template
+# instead and apply a PERMISSIVE PeerAuthentication to the demo-api-baseline and
+# demo-api-candidate workloads (namespace demo) so they accept the Job's plaintext requests;
+# Kafka must then expose a listener the Job can reach without the mesh (see --brokers).
+#
+# Jobs are immutable: delete the previous run before applying again.
+#
+#   kubectl -n shadowtap delete job shadowtap-replay --ignore-not-found
+#   kubectl apply -k deploy/k8s/replay
+#   kubectl -n shadowtap logs -f job/shadowtap-replay -c replay
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: shadowtap-replay
+  namespace: shadowtap
+  labels:
+    app.kubernetes.io/name: shadowtap-replay
+    app.kubernetes.io/component: replay
+spec:
+  backoffLimit: 0 # a failed gate is a verdict, not a crash to retry
+  activeDeadlineSeconds: 1800
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: shadowtap-replay
+        app.kubernetes.io/component: replay
+        # Inject the sidecar (the namespace has injection enabled; this makes it explicit).
+        sidecar.istio.io/inject: "true"
+      annotations:
+        # Run the proxy as a native sidecar so the pod ends when the replay does (see the
+        # header comment). Overrides ENABLE_NATIVE_SIDECARS for this pod.
+        sidecar.istio.io/nativeSidecar: "true"
+    spec:
+      restartPolicy: Never
+      serviceAccountName: shadowtap-replay
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: replay
+          image: ghcr.io/jenil133/shadowtap:latest
+          args:
+            - replay
+            # Kafka listener. 9092 is the Strimzi plaintext bootstrap listener; it is
+            # acceptable only because the connection leaves this pod through the sidecar,
+            # which wraps it in mTLS when the Kafka pods are in the mesh. For brokers outside
+            # the mesh use the TLS listener (9093) with --kafka-tls-ca pointing at the mounted
+            # cluster CA (Secret shadowtap-kafka-cluster-ca-cert) and, with SCRAM,
+            # --kafka-sasl-mechanism, --kafka-sasl-username and SHADOWTAP_KAFKA_SASL_PASSWORD
+            # from a Secret. The tap's ConfigMap (deploy/k8s/base) has the same choice to
+            # make; keep the two consistent.
+            - --brokers=shadowtap-kafka-bootstrap.kafka.svc:9092
+            - --from=-15m
+            - --to=now
+            - --target=http://demo-api-candidate.demo.svc.cluster.local:8080
+            - --baseline=http://demo-api-baseline.demo.svc.cluster.local:8080
+            - --speed=4
+            - --concurrency=32
+            # Scrub with the tap's settings and key, so recorded pseudonyms and
+            # re-scrubbed candidate values agree.
+            - --tap-config=/etc/shadowtap/tap.yaml
+            - --publish-diffs
+            - --report-json=/reports/report.json
+            - --report-html=/reports/report.html
+            - --max-mismatch-rate=0.01
+            - --max-error-rate=0.01
+            - --fail-on-latency
+          env:
+            - name: SHADOWTAP_SCRUB_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: shadowtap-scrub-key
+                  key: scrub-key
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: tap-config
+              mountPath: /etc/shadowtap
+              readOnly: true
+            - name: reports
+              mountPath: /reports
+      volumes:
+        - name: tap-config
+          configMap:
+            name: shadowtap-tap-config
+        - name: reports
+          emptyDir:
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: shadowtap-replay
+  namespace: shadowtap
+  labels:
+    app.kubernetes.io/name: shadowtap-replay
+automountServiceAccountToken: false

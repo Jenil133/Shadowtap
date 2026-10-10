@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
+	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -208,6 +211,54 @@ func TestTailSkipsUndecodableRecords(t *testing.T) {
 	if code != exitOK || len(lines(out)) != 1 || !strings.Contains(errOut, "1 undecodable") {
 		t.Errorf("exit %d, %d lines, stderr %q", code, len(lines(out)), errOut)
 	}
+
+	// An audit cannot vouch for a record it could not read.
+	_, errOut, code = cli(t, "tail", "--brokers", strings.Join(brokers, ","), "--from", "earliest", "--timeout", "1s", "--check-pii")
+	if code != exitPII || !strings.Contains(errOut, "could not be decoded") {
+		t.Errorf("check-pii with an undecodable record: exit %d, stderr %q", code, errOut)
+	}
+}
+
+func TestConnFlags(t *testing.T) {
+	pwFile := t.TempDir() + "/pw"
+	if err := os.WriteFile(pwFile, []byte("from-file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := func(k string) string {
+		switch k {
+		case envKafkaSASLPassword:
+			return "from-env"
+		case envKafkaBrokers:
+			return "b1:9093, b2:9093"
+		}
+		return ""
+	}
+	parse := func(args ...string) (kafka.Config, error) {
+		var c connFlags
+		fs := flag.NewFlagSet("t", flag.ContinueOnError)
+		c.register(fs, env)
+		if err := fs.Parse(args); err != nil {
+			t.Fatal(err)
+		}
+		cfg := kafka.DefaultConfig()
+		return cfg, c.apply(&cfg, env)
+	}
+
+	cfg, err := parse()
+	if err != nil || !slices.Equal(cfg.Brokers, []string{"b1:9093", "b2:9093"}) || cfg.TLS.Enabled || cfg.SASL.Mechanism != "" {
+		t.Errorf("defaults: %+v, %v", cfg, err)
+	}
+	cfg, err = parse("--kafka-tls-ca", "/ca.pem", "--kafka-sasl-mechanism", "SCRAM-SHA-512", "--kafka-sasl-username", "u")
+	if err != nil || !cfg.TLS.Enabled || cfg.TLS.CAFile != "/ca.pem" || cfg.SASL.Username != "u" || cfg.SASL.Password != "from-env" {
+		t.Errorf("tls + sasl from env: %+v, %v", cfg, err)
+	}
+	cfg, err = parse("--kafka-sasl-mechanism", "PLAIN", "--kafka-sasl-username", "u", "--kafka-sasl-password-file", pwFile)
+	if err != nil || cfg.SASL.Password != "from-file" {
+		t.Errorf("password file: %q, %v", cfg.SASL.Password, err)
+	}
+	if _, err := parse("--kafka-sasl-username", "u"); err == nil {
+		t.Error("username without a mechanism was accepted")
+	}
 }
 
 func TestUsage(t *testing.T) {
@@ -220,6 +271,8 @@ func TestUsage(t *testing.T) {
 		{[]string{"help"}, exitOK},
 		{[]string{"version"}, exitOK},
 		{[]string{"tail", "-h"}, exitOK},
+		{[]string{"trace", "-h"}, exitOK},
+		{[]string{"trace"}, exitUsage},
 		{[]string{"tail", "--format", "xml"}, exitUsage},
 		{[]string{"tail", "--status", "abc"}, exitUsage},
 		{[]string{"tail", "--status", "6xx"}, exitUsage},

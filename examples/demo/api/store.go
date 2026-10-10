@@ -108,10 +108,11 @@ func (s *store) userByEmailLocked(email string) (*userRecord, bool) {
 	return rec, true
 }
 
-// listUsers returns users sorted by id, filtered by email (case-insensitive,
-// exact) when email is not empty, and cut to limit when limit is positive.
-// total is the number of matches before the cut.
-func (s *store) listUsers(email string, limit int) (users []User, total int) {
+// listUsers returns users filtered by email (case-insensitive, exact) when
+// email is not empty, sorted by id (descending when desc is set) and cut to
+// limit when limit is positive. total is the number of matches before the
+// cut.
+func (s *store) listUsers(email string, limit int, desc bool) (users []User, total int) {
 	s.mu.RLock()
 	if email != "" {
 		if rec, ok := s.userByEmailLocked(email); ok {
@@ -125,7 +126,12 @@ func (s *store) listUsers(email string, limit int) (users []User, total int) {
 	}
 	s.mu.RUnlock()
 
-	slices.SortFunc(users, func(a, b User) int { return strings.Compare(a.ID, b.ID) })
+	slices.SortFunc(users, func(a, b User) int {
+		if desc {
+			return strings.Compare(b.ID, a.ID)
+		}
+		return strings.Compare(a.ID, b.ID)
+	})
 	total = len(users)
 	if limit > 0 && limit < total {
 		users = users[:limit]

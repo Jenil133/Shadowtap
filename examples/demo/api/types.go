@@ -55,6 +55,26 @@ type UserList struct {
 	Users []User `json:"users"`
 	Count int    `json:"count"` // users in this response
 	Total int    `json:"total"` // users matching the query before the limit
+	// GeneratedAt is when the list was rendered (RFC 3339, UTC, with
+	// nanoseconds). It differs on every response: noise a replay must not
+	// report as a regression.
+	GeneratedAt string `json:"generated_at"`
+}
+
+// UserV2 is a user as VersionV2 returns it: phone is renamed phone_number.
+// The shadowing Phone field hides User.Phone from the encoding.
+type UserV2 struct {
+	User
+	Phone       *struct{} `json:"phone,omitempty"`
+	PhoneNumber string    `json:"phone_number,omitempty"`
+}
+
+// UserListV2 is the body of GET /api/users in VersionV2.
+type UserListV2 struct {
+	Users       []UserV2 `json:"users"`
+	Count       int      `json:"count"`
+	Total       int      `json:"total"`
+	GeneratedAt string   `json:"generated_at"`
 }
 
 // Item is one order line.
