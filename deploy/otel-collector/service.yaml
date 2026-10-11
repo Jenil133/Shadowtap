@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  labels:
+    app.kubernetes.io/name: otel-collector
+    app.kubernetes.io/component: collector
+spec:
+  selector:
+    app.kubernetes.io/name: otel-collector
+  ports:
+    # otel-collector.shadowtap.svc:4317 is what the Istio extension providers (deploy/istio),
+    # the Shadowtap binaries (OTEL_EXPORTER_OTLP_ENDPOINT) and the demo services point at.
+    # appProtocol grpc makes Istio speak HTTP/2 and balance per export call.
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+      protocol: TCP
+      appProtocol: grpc
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+      protocol: TCP
+      appProtocol: http
+    - name: http-metrics
+      port: 8888
+      targetPort: http-metrics
+      protocol: TCP
+      appProtocol: http

@@ -1,0 +1,66 @@
+# shadowtap-indexer configuration for the local compose stack. Unknown keys are rejected.
+#
+# compose.yaml sets SHADOWTAP_KAFKA_BROKERS=kafka:9092 and SHADOWTAP_ES_URL=http://elasticsearch:9200
+# through the environment; the values below are the same so the file also works standalone.
+
+log:
+  level: info
+  format: json
+
+listen:
+  http: ":9091" # /healthz, /readyz, /metrics
+
+kafka:
+  brokers: ["kafka:9092"]
+  client_id: shadowtap-indexer
+  group: shadowtap-indexer
+  start_offset: earliest
+  topics:
+    captures: shadowtap.captures.v1
+    diffs: shadowtap.diffs.v1
+    spans: shadowtap.otel.spans.v1
+    logs: shadowtap.otel.logs.v1
+    dlq: shadowtap.indexer.dlq.v1
+  session_timeout_ms: 45000
+  rebalance_timeout_ms: 60000
+  fetch_max_bytes: 16777216
+  max_record_bytes: 900000
+  tls:
+    enabled: false
+  sasl:
+    mechanism: ""
+
+elasticsearch:
+  urls: ["http://elasticsearch:9200"]
+  bootstrap: true # ILM policy, templates and data streams are created at startup
+  compress: true
+  request_timeout_ms: 30000
+  tls: {}
+
+indices:
+  spans: traces-shadowtap-default
+  logs: logs-shadowtap-default
+  captures: shadowtap-captures
+  diffs: shadowtap-diffs
+
+batch:
+  max_records: 1000
+  max_bytes: 5242880
+  max_interval_ms: 1000
+
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 200
+  max_backoff_ms: 10000
+
+# The indexer's own spans and logs go through the same Collector it consumes from.
+telemetry:
+  enabled: true
+  endpoint: otel-collector:4317
+  insecure: true
+  service_name: shadowtap-indexer
+  sample_ratio: 1
+  timeout_ms: 0
+  metrics: false
+
+shutdown_timeout_ms: 20000

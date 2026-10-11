@@ -1,0 +1,42 @@
+# Who may open connections to the tap. Without this, any pod in the cluster could stream
+# fabricated exchanges into the captures topic over :9002 or scrape :9090.
+#
+# - ext_proc (:9002) only from namespaces labelled shadowtap.io/capture=enabled: the namespaces
+#   whose sidecars carry a Shadowtap EnvoyFilter (deploy/k8s/demo labels "demo").
+# - admin (:9090) and the sidecar's merged metrics / health ports only from namespaces
+#   labelled shadowtap.io/metrics=enabled (label your Prometheus namespace).
+#
+# Kubelet probes come from the node and are not subject to NetworkPolicy on common CNIs.
+# The Istio AuthorizationPolicy in deploy/istio enforces the same rule on mesh identities,
+# which is the stronger control; this policy is the layer that holds without the mesh.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: shadowtap-tap
+  labels:
+    app.kubernetes.io/name: shadowtap-tap
+    app.kubernetes.io/component: tap
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: shadowtap-tap
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              shadowtap.io/capture: enabled
+      ports:
+        - port: 9002
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              shadowtap.io/metrics: enabled
+      ports:
+        - port: 9090 # tap /metrics, /readyz, /healthz
+          protocol: TCP
+        - port: 15020 # istio-agent merged metrics and rewritten probes
+          protocol: TCP
+        - port: 15090 # Envoy sidecar stats
+          protocol: TCP

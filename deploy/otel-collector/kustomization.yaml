@@ -1,0 +1,31 @@
+# OpenTelemetry Collector: OTLP from sidecars and Shadowtap components -> Kafka
+# (shadowtap.otel.spans.v1, shadowtap.otel.logs.v1) for shadowtap-indexer.
+#
+# Prerequisites (not part of this kustomization):
+#   - the shadowtap namespace: ../k8s/base
+#   - the spans and logs topics: ../k8s/kafka-topic.yaml (Strimzi) or your own tooling
+#   - the Istio providers that make sidecars send here: ../istio (telemetry.yaml)
+#
+#   kubectl kustomize deploy/otel-collector     # render
+#   kubectl apply -k deploy/otel-collector      # install
+#
+# config.yaml becomes the ConfigMap otel-collector-config-<hash>; the hash changes with the file,
+# so editing it and applying again rolls the Collector pods. CI validates config.yaml with the
+# Collector image pinned in deployment.yaml (make manifests, scripts/validate-otel-collector.sh).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: shadowtap
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: shadowtap
+    includeSelectors: false
+    includeTemplates: true
+resources:
+  - rbac.yaml
+  - deployment.yaml
+  - service.yaml
+  - pdb.yaml
+configMapGenerator:
+  - name: otel-collector-config
+    files:
+      - config.yaml

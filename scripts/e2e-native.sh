@@ -16,6 +16,9 @@
 
 set -euo pipefail
 
+# Ledgers and captures hold (fake) personal data: keep every artifact owner-only.
+umask 077
+
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
 
@@ -79,6 +82,7 @@ go build -o "$bin/" ./cmd/shadowtap-tap ./cmd/shadowtap ./examples/demo/cmd/demo
 sed -e 's/address: 0\.0\.0\.0/address: 127.0.0.1/' \
 	-e 's/address: demo-api$/address: 127.0.0.1/' -e 's/address: tap$/address: 127.0.0.1/' \
 	-e 's/port_value: 10000$/port_value: 11000/' -e 's/port_value: 10001$/port_value: 11001/' \
+	-e 's/port_value: 10002$/port_value: 11002/' \
 	-e 's/port_value: 9901$/port_value: 19901/' -e 's/port_value: 8080$/port_value: 18080/' \
 	-e 's/port_value: 9002$/port_value: 19002/' deploy/local/envoy.yaml >"$out/envoy.yaml"
 envoy --mode validate -c "$out/envoy.yaml" >"$out/envoy-validate.log" 2>&1 || die "envoy rejected $out/envoy.yaml (see $out/envoy-validate.log)"
@@ -103,6 +107,13 @@ for _ in $(seq 1 120); do
 done
 [ "$ready" = 1 ] || die "stack not ready after 60s (logs in $out/)"
 pass "stack is ready"
+
+# The control listener has no tap: its latencies are the baseline the observe and inline
+# listeners are compared with (docs/results, make results).
+log "Sending $requests requests through the control listener (:11002), no tap"
+"$bin/loadgen" --target "http://127.0.0.1:11002" --requests "$requests" --seed 3 \
+	--pii-out "$out/pii-control.txt" >"$out/loadgen-control.log" 2>&1 || warn "control loadgen exited non-zero"
+rm -f "$out/pii-control.txt" # nothing is captured on the control path
 
 sent=0
 for mode in observe:11000:1 inline:11001:2; do
@@ -160,6 +171,49 @@ if [ "$sent_inline" -gt 0 ] && [ "$sent_inline" = "$recv_inline" ]; then
 	pass "envoy: inline mode got one reply for each of its $sent_inline messages, no ext_proc errors"
 else
 	fail "envoy: inline mode sent $sent_inline messages and received $recv_inline replies"
+fi
+
+# Replay the captured window. Each run gets fresh targets (demo-api keeps state in
+# memory), and captures are sent one at a time so baseline and candidate stay in step.
+log "Replaying the captures: v1 against v1, then v2 against v1"
+start replay-base-a "$bin/demo-api" --addr 127.0.0.1:18081 --version v1
+start replay-cand-a "$bin/demo-api" --addr 127.0.0.1:18082 --version v1
+start replay-base-b "$bin/demo-api" --addr 127.0.0.1:18083 --version v1
+start replay-cand-b "$bin/demo-api" --addr 127.0.0.1:18084 --version v2
+for port in 18081 18082 18083 18084; do
+	for _ in $(seq 1 40); do
+		http_ok "http://127.0.0.1:$port/healthz" && break
+		sleep 0.25
+	done
+done
+replay() { # name candidate-port baseline-port
+	SHADOWTAP_SCRUB_KEY=native-e2e-scrub-key-not-for-production "$bin/shadowtap" replay --brokers "$brokers" \
+		--target "http://127.0.0.1:$2" --baseline "http://127.0.0.1:$3" --speed max --concurrency 1 \
+		--method GET,HEAD,POST --allow-mutating --max-mismatch-rate 0 --max-error-rate 0 --fail-on-latency \
+		--tap-config deploy/local/tap.yaml --run-id "e2e-$1" --report-json "$out/replay-$1.json" \
+		--report-html "$out/replay-$1.html" --diffs-out "$out/replay-$1.ndjson" >"$out/replay-$1.txt" 2>"$out/replay-$1.log"
+}
+status=0
+replay v1 18082 18081 || status=$?
+if [ "$status" -eq 0 ]; then
+	pass "replay v1 against v1: no mismatches, gate passed ($(grep -m1 'captures,' "$out/replay-v1.txt"))"
+else
+	fail "replay v1 against v1 exited $status (report in $out/replay-v1.txt)"
+fi
+status=0
+replay v2 18084 18083 || status=$?
+if [ "$status" -eq 1 ] && grep -q 'phone_number' "$out/replay-v2.txt" && grep -q 'POST /api/orders  status changed' "$out/replay-v2.txt" &&
+	grep -q 'latency regression on .*POST /api/orders' "$out/replay-v2.txt"; then
+	pass "replay v2 against v1: renamed field, status change and latency regression reported, gate failed"
+else
+	fail "replay v2 against v1 exited $status or missed a regression (report in $out/replay-v2.txt)"
+fi
+# Reports and diffs quote response values: they must hold pseudonyms only.
+leaked=$(cat "$out"/replay-*.ndjson "$out"/replay-*.json "$out"/replay-*.html "$out"/replay-*.txt | grep -c -F -f "$out/ledger.txt" || true)
+if [ "$leaked" -eq 0 ]; then
+	pass "replay reports and diffs hold none of the PII values sent"
+else
+	fail "$leaked lines of the replay reports contain PII values sent (inspect $out/replay-* privately)"
 fi
 
 printf '\n%d passed, %d failed\n' "$passed" "$failed"

@@ -2,8 +2,12 @@
 
 # Builds one Shadowtap binary into a static, non-root distroless image.
 #
-#   docker build -t shadowtap/shadowtap-tap:dev .
-#   docker build --build-arg CMD=./examples/demo/cmd/demo-api -t shadowtap/demo-api:dev .
+#   docker build -t ghcr.io/jenil133/shadowtap-tap:dev .
+#   docker build --build-arg CMD=./examples/demo/cmd/demo-api -t ghcr.io/jenil133/shadowtap-demo-api:dev .
+#   docker build --build-arg CMD=./cmd/shadowtap -t ghcr.io/jenil133/shadowtap:dev .
+#
+# Image names are the same everywhere (make docker, compose, CI, Kubernetes):
+# ghcr.io/jenil133/{shadowtap-tap,shadowtap-demo-api,shadowtap}.
 #
 # The build stage runs on the builder's own platform and cross-compiles, so a multi-arch
 # build (docker buildx build --platform linux/amd64,linux/arm64 .) never runs Go under QEMU.

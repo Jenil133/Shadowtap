@@ -1,4 +1,4 @@
-# Captures topic for a Strimzi-managed Kafka cluster named "shadowtap-kafka" in namespace
+# Shadowtap topics for a Strimzi-managed Kafka cluster named "shadowtap-kafka" in namespace
 # "kafka" (bootstrap: shadowtap-kafka-bootstrap.kafka.svc). Apply it where the Topic Operator
 # watches:
 #
@@ -23,3 +23,77 @@ spec:
     max.message.bytes: 1048576 # the tap fits records to kafka.max_record_bytes (900000)
     # The tap sets each record's timestamp to the request start; replays seek on it.
     message.timestamp.type: CreateTime
+---
+# Per-exchange replay results (shadowtap replay --publish-diffs), keyed by capture id.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: shadowtap.diffs.v1
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: shadowtap-kafka
+    app.kubernetes.io/part-of: shadowtap
+spec:
+  topicName: shadowtap.diffs.v1
+  partitions: 6
+  replicas: 3
+  config:
+    retention.ms: 2592000000 # 30 days: release history
+    min.insync.replicas: 2
+    max.message.bytes: 1048576
+---
+# OpenTelemetry spans from the Collector (deploy/otel-collector), one OTLP ExportTraceServiceRequest
+# per record, keyed by trace id. Consumed by shadowtap-indexer.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: shadowtap.otel.spans.v1
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: shadowtap-kafka
+    app.kubernetes.io/part-of: shadowtap
+spec:
+  topicName: shadowtap.otel.spans.v1
+  partitions: 12
+  replicas: 3
+  config:
+    retention.ms: 259200000 # 3 days: enough to reindex after an Elasticsearch outage
+    min.insync.replicas: 2
+    max.message.bytes: 1048576 # the Collector's producer.max_message_bytes (1000000) stays below
+---
+# OpenTelemetry logs from the Collector, one OTLP ExportLogsServiceRequest per record.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: shadowtap.otel.logs.v1
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: shadowtap-kafka
+    app.kubernetes.io/part-of: shadowtap
+spec:
+  topicName: shadowtap.otel.logs.v1
+  partitions: 12
+  replicas: 3
+  config:
+    retention.ms: 259200000 # 3 days
+    min.insync.replicas: 2
+    max.message.bytes: 1048576
+---
+# Dead letters of shadowtap-indexer: records (or single spans and logs) that Elasticsearch
+# rejected for good, with the error in the record headers. Small and long-lived, for inspection.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: shadowtap.indexer.dlq.v1
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: shadowtap-kafka
+    app.kubernetes.io/part-of: shadowtap
+spec:
+  topicName: shadowtap.indexer.dlq.v1
+  partitions: 3
+  replicas: 3
+  config:
+    retention.ms: 2592000000 # 30 days
+    min.insync.replicas: 2
+    max.message.bytes: 1048576 # the indexer's kafka.max_record_bytes (900000) stays below

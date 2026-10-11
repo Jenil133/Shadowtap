@@ -28,18 +28,21 @@ spec:
         prometheus.io/port: "9090"
         prometheus.io/path: /metrics
         # Start the tap only once its sidecar can reach Kafka, and keep the sidecar's
-        # outbound path up for the tap's shutdown flush (gRPC stop 15s + queue drain 10s).
+        # outbound path up for the whole of the tap's shutdown budget (28s: gRPC stop 12s +
+        # queue drain 7s + Kafka flush 7s + admin stop 2s), or the final flush would find
+        # the sidecar gone. Istio requires this to stay below terminationGracePeriodSeconds.
         proxy.istio.io/config: |
           holdApplicationUntilProxyStarts: true
-          terminationDrainDuration: 25s
+          terminationDrainDuration: 30s
     spec:
       serviceAccountName: shadowtap-tap
       automountServiceAccountToken: false
       # Service links would inject SHADOWTAP_TAP_* variables into the tap's environment.
       enableServiceLinks: false
       # The tap's shutdown (not ready -> gRPC GracefulStop -> drain queue -> flush Kafka)
-      # is budgeted to finish inside this.
-      terminationGracePeriodSeconds: 30
+      # is budgeted at 28s (cmd/shadowtap-tap); the sidecar drains for 30s (above), and
+      # both must finish inside this.
+      terminationGracePeriodSeconds: 35
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532 # distroless "nonroot"

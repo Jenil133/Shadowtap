@@ -1,5 +1,5 @@
-# Local Shadowtap stack: Kafka (KRaft), topic init, demo-api, the tap, and Envoy standing in
-# for the Istio sidecar.
+# Local Shadowtap stack: Kafka (KRaft), topic init, the demo services, the tap, Envoy standing
+# in for the Istio sidecar, the OpenTelemetry Collector, the indexer, Elasticsearch and Kibana.
 #
 #   docker compose -f deploy/local/compose.yaml up -d --build --wait     (or: make up)
 #
@@ -7,7 +7,13 @@
 #   http://localhost:10001   demo-api through Envoy, ext_proc inline mode
 #   http://localhost:9901    Envoy admin
 #   http://localhost:9090    tap admin: /healthz, /readyz, /metrics
+#   http://localhost:9091    indexer admin: /healthz, /readyz, /metrics
 #   localhost:29092          Kafka for host tools: shadowtap tail --brokers localhost:29092
+#   http://localhost:8081    replay baseline: demo-api v1, fresh state (make replay)
+#   http://localhost:8082    replay candidate: demo-api v2, deliberate regressions
+#   localhost:4317           OpenTelemetry Collector (OTLP gRPC) for host-run binaries
+#   http://localhost:9200    Elasticsearch: shadowtap trace --es http://localhost:9200
+#   http://localhost:5601    Kibana (deploy/kibana/import.sh loads the dashboard)
 #
 # Published ports bind to 127.0.0.1 because nothing in this stack is authenticated.
 name: shadowtap
@@ -46,33 +52,34 @@ services:
       retries: 24
       start_period: 20s
 
+  # Creates every topic once the broker is healthy; everything that produces or consumes waits
+  # for it, so a typo in a topic name fails loudly instead of being auto-created.
   kafka-init:
     image: apache/kafka:4.3.1
     depends_on:
       kafka:
         condition: service_healthy
     restart: "no"
-    entrypoint: ["/opt/kafka/bin/kafka-topics.sh"]
+    entrypoint: ["/bin/bash", "-c"]
     command:
-      - --bootstrap-server
-      - kafka:9092
-      - --create
-      - --if-not-exists
-      - --topic
-      - shadowtap.captures.v1
-      - --partitions
-      - "6"
-      - --replication-factor
-      - "1"
-      - --config
-      - retention.ms=604800000 # 7 days
-      - --config
-      - message.timestamp.type=CreateTime # record timestamp = request start, for replay seeks
-      - --config
-      - max.message.bytes=1048576 # above the tap's kafka.max_record_bytes (900000)
+      - |
+        set -e
+        create() {
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists \
+            --topic "$$1" --partitions 6 --replication-factor 1 \
+            --config retention.ms=604800000 \
+            --config message.timestamp.type=CreateTime \
+            --config max.message.bytes=1048576
+        }
+        create shadowtap.captures.v1       # tap -> replayer, indexer (record timestamp = request start)
+        create shadowtap.diffs.v1          # shadowtap replay --publish-diffs -> indexer
+        create shadowtap.otel.spans.v1     # Collector -> indexer (OTLP protobuf)
+        create shadowtap.otel.logs.v1      # Collector -> indexer (OTLP protobuf)
+        create shadowtap.indexer.dlq.v1    # records the indexer could not index
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
 
   demo-api:
-    image: shadowtap/demo-api:dev
+    image: ghcr.io/jenil133/shadowtap-demo-api:dev
     build:
       context: ../..
       dockerfile: Dockerfile
@@ -83,9 +90,11 @@ services:
     # probes GET /healthz through Envoy instead.
     expose:
       - "8080"
+    depends_on:
+      - otel-collector
 
   tap:
-    image: shadowtap/shadowtap-tap:dev
+    image: ghcr.io/jenil133/shadowtap-tap:dev
     build:
       context: ../..
       dockerfile: Dockerfile
@@ -98,6 +107,9 @@ services:
       SHADOWTAP_SCRUB_KEY: local-dev-scrub-key-not-for-production
       SHADOWTAP_SAMPLE_RATE: "1.0"
       POD_NAME: tap-local
+      # Capture spans join the captured request's trace (deploy/local/otel-collector.yaml).
+      SHADOWTAP_OTEL_ENABLED: "true"
+      SHADOWTAP_OTEL_ENDPOINT: otel-collector:4317
     volumes:
       - ./tap.yaml:/etc/shadowtap/tap.yaml:ro
     ports:
@@ -111,7 +123,30 @@ services:
     depends_on:
       kafka-init:
         condition: service_completed_successfully
+      otel-collector:
+        condition: service_started
 
+  # Replay targets. Not behind Envoy, so replayed traffic is not captured again.
+  demo-api-baseline:
+    image: ghcr.io/jenil133/shadowtap-demo-api:dev
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        CMD: ./examples/demo/cmd/demo-api
+    command: ["--addr", ":8080", "--version", "v1"]
+    ports:
+      - "127.0.0.1:8081:8080"
+  demo-api-candidate:
+    image: ghcr.io/jenil133/shadowtap-demo-api:dev
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        CMD: ./examples/demo/cmd/demo-api
+    command: ["--addr", ":8080", "--version", "v2"]
+    ports:
+      - "127.0.0.1:8082:8080"
   envoy:
     image: envoyproxy/envoy:v1.39-latest
     command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "info"]
@@ -120,7 +155,96 @@ services:
     ports:
       - "127.0.0.1:10000:10000" # observe listener
       - "127.0.0.1:10001:10001" # inline listener
+      - "127.0.0.1:10002:10002" # control listener (no tap), for overhead measurements
       - "127.0.0.1:9901:9901" # admin
     depends_on:
       - tap
       - demo-api
+      - otel-collector
+
+  # OTLP from Envoy, the tap, the indexer and the demo services -> Kafka, for the indexer.
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.162.0
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    environment:
+      KAFKA_BROKERS: kafka:9092
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "127.0.0.1:4317:4317" # OTLP gRPC
+      - "127.0.0.1:4318:4318" # OTLP HTTP
+      - "127.0.0.1:13133:13133" # health
+    mem_limit: 512m
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.5
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false" # local only; the Kubernetes indexer uses credentials
+      cluster.name: shadowtap
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+      cluster.routing.allocation.disk.threshold_enabled: "false"
+    ports:
+      - "127.0.0.1:9200:9200"
+    mem_limit: 1g
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s >/dev/null"]
+      interval: 5s
+      timeout: 10s
+      retries: 36
+      start_period: 30s
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:9.5.5
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+      TELEMETRY_ENABLED: "false"
+    ports:
+      - "127.0.0.1:5601:5601"
+    mem_limit: 1g
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:5601/api/status >/dev/null"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+
+  # Kafka (captures, diffs, spans, logs) -> Elasticsearch. Bootstraps the index templates.
+  indexer:
+    image: ghcr.io/jenil133/shadowtap-indexer:dev
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        CMD: ./cmd/shadowtap-indexer
+    command: ["--config", "/etc/shadowtap/indexer.yaml"]
+    environment:
+      SHADOWTAP_KAFKA_BROKERS: kafka:9092
+      SHADOWTAP_ES_URL: http://elasticsearch:9200
+      POD_NAME: indexer-local
+    volumes:
+      - ./indexer.yaml:/etc/shadowtap/indexer.yaml:ro
+    ports:
+      - "127.0.0.1:9091:9091"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      elasticsearch:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started

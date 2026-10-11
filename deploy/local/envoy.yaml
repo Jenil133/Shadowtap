@@ -4,6 +4,7 @@
 #   :10000  observe: observability_mode, STREAMED bodies; Envoy never waits on the tap.
 #   :10001  inline:  classic ext_proc, BUFFERED_PARTIAL bodies, mode_override for unsampled
 #                    requests; the fallback for meshes older than Istio 1.23 / Envoy 1.31.
+#   :10002  control: no ext_proc, to measure what the tap adds.
 #   :9901   admin
 #
 # Both listeners set failure_mode_allow, so a tap outage never affects traffic. There is no
@@ -33,6 +34,20 @@ static_resources:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 stat_prefix: observe
                 generate_request_id: true
+                # Envoy's own span for each request goes to the Collector, so the sidecar hop
+                # shows up in `shadowtap trace` next to the service and tap spans.
+                tracing:
+                  provider:
+                    name: envoy.tracers.opentelemetry
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.config.trace.v3.OpenTelemetryConfig
+                      grpc_service:
+                        envoy_grpc:
+                          cluster_name: otel_collector
+                        timeout: 0.25s
+                      service_name: shadowtap-envoy
+                  random_sampling:
+                    value: 100
                 route_config:
                   name: demo_api
                   virtual_hosts:
@@ -81,6 +96,18 @@ static_resources:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 stat_prefix: inline
                 generate_request_id: true
+                tracing:
+                  provider:
+                    name: envoy.tracers.opentelemetry
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.config.trace.v3.OpenTelemetryConfig
+                      grpc_service:
+                        envoy_grpc:
+                          cluster_name: otel_collector
+                        timeout: 0.25s
+                      service_name: shadowtap-envoy
+                  random_sampling:
+                    value: 100
                 route_config:
                   name: demo_api
                   virtual_hosts:
@@ -115,6 +142,35 @@ static_resources:
                         response_body_mode: BUFFERED_PARTIAL
                         request_trailer_mode: SKIP
                         response_trailer_mode: SKIP
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+    # Control: the same route with no ext_proc filter at all. Only for measuring what the tap
+    # adds to a request (scripts/e2e-native.sh compares :10002 with :10000 and :10001).
+    - name: control
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 10002
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: control
+                generate_request_id: true
+                route_config:
+                  name: demo_api
+                  virtual_hosts:
+                    - name: demo_api
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: /
+                          route:
+                            cluster: demo_api
+                http_filters:
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
@@ -158,3 +214,23 @@ static_resources:
                     socket_address:
                       address: tap
                       port_value: 9002
+
+    # The OpenTelemetry Collector (OTLP over gRPC) for Envoy's own spans.
+    - name: otel_collector
+      type: STRICT_DNS
+      connect_timeout: 1s
+      dns_lookup_family: V4_ONLY
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options: {}
+      load_assignment:
+        cluster_name: otel_collector
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: otel-collector
+                      port_value: 4317

@@ -9,6 +9,9 @@ bin
 dist
 deploy
 scripts
+test
+phases
+*.md
 coverage.*
 *.out
 *.test

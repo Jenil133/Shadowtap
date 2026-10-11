@@ -60,9 +60,14 @@ data:
       max_decoded_bytes: 1048576
 
     kafka:
-      # Strimzi bootstrap Service of the Kafka cluster "shadowtap-kafka" in namespace "kafka".
+      # Bootstrap Service of a Strimzi Kafka cluster named "shadowtap" in namespace "kafka"
+      # (Strimzi names it <cluster>-kafka-bootstrap). The replay Job and the KafkaTopic in
+      # ../kafka-topic.yaml must name the same cluster.
+      # SECURITY: the plaintext listener below is only acceptable when the Kafka pods are in
+      # the mesh, so Istio wraps the connection in mTLS. Captures are scrubbed, but they still
+      # describe production traffic: outside the mesh, switch to the TLS listener.
       # For the TLS listener use port 9093 with tls.enabled and ca_file pointing at the
-      # mounted cluster CA (secret shadowtap-kafka-cluster-ca-cert); for SCRAM set
+      # mounted cluster CA (secret shadowtap-cluster-ca-cert); for SCRAM set
       # sasl.mechanism SCRAM-SHA-512, sasl.username and the password as described above.
       brokers: ["shadowtap-kafka-bootstrap.kafka.svc:9092"]
       topic: shadowtap.captures.v1

@@ -4,5 +4,10 @@
 #   kubectl apply -k deploy/istio
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+#
+# peerauthentication.yaml and authorizationpolicy.yaml lock the tap down to mTLS callers from
+# the captured namespaces; keep their namespace list in step with the EnvoyFilters.
 resources:
   - envoyfilter-observe.yaml
+  - peerauthentication.yaml
+  - authorizationpolicy.yaml

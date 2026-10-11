@@ -1,0 +1,20 @@
+# The tap only accepts mutual TLS, so every ext_proc stream carries the calling workload's
+# mesh identity and the AuthorizationPolicy below can check it. Port 9090 (admin) stays
+# permissive so a Prometheus without a sidecar can still scrape /metrics; it accepts no
+# captures.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: shadowtap-tap
+  namespace: shadowtap
+  labels:
+    app.kubernetes.io/part-of: shadowtap
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: shadowtap-tap
+  mtls:
+    mode: STRICT
+  portLevelMtls:
+    "9090":
+      mode: PERMISSIVE

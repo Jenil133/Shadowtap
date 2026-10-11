@@ -2,10 +2,14 @@
 #
 # End-to-end test of the local capture pipeline (needs Docker):
 #
-#   docker compose up (Kafka, tap, demo-api, Envoy)
+#   docker compose up (Kafka, tap, demo-api, Envoy, replay targets)
 #   -> loadgen with seeded fake PII through Envoy's observe (:10000) and inline (:10001) listeners
 #   -> shadowtap tail reads the captures topic back
 #   -> assert captures exist for both modes and none of the PII the loadgen sent reached Kafka
+#   -> assert Envoy's own ext_proc counters: every inline message answered, no failures
+#   -> shadowtap replay sends the captured window to demo-api v2 with the v1 baseline
+#      (against a real broker): the gate must fail on v2's deliberate regressions,
+#      the diffs must land in shadowtap.diffs.v1, and no PII may appear in the reports
 #
 # Usage: scripts/e2e-local.sh   (or: make e2e)
 #
@@ -18,11 +22,15 @@
 
 set -euo pipefail
 
+# Ledgers and captures hold (fake) personal data: keep every artifact owner-only.
+umask 077
+
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
 
 compose_file=deploy/local/compose.yaml
-out=.e2e
+# Separate from .e2e/native so neither script wipes the other's artifacts.
+out=.e2e/local
 bin=$out/bin
 brokers=localhost:29092
 requests=${E2E_REQUESTS:-300}
@@ -226,5 +234,86 @@ case $status in
 3) fail "shadowtap tail --check-pii found unscrubbed PII (findings in $out/check-pii.txt)" ;;
 *) fail "shadowtap tail --check-pii failed with exit status $status" ;;
 esac
+
+# --- envoy's view ------------------------------------------------------------------------
+
+# stat prints the value of an Envoy counter from the admin endpoint (0 when absent).
+stat() { curl -fsS --max-time 3 "http://localhost:9901/stats?filter=^$1\$" | awk -F': ' '{print $2}' | head -n 1 | grep . || echo 0; }
+
+# Every inline message answered, nothing failed or timed out, no mutation attempted: the
+# counters Envoy keeps for the ext_proc filter on each listener.
+for s in streams_failed failure_mode_allowed message_timeouts spurious_msgs_received rejected_header_mutations; do
+	for listener in observe inline; do
+		v=$(stat "http.$listener.ext_proc.$s")
+		[ "$v" = 0 ] || fail "envoy http.$listener.ext_proc.$s = $v"
+	done
+done
+sent_inline=$(stat http.inline.ext_proc.stream_msgs_sent)
+recv_inline=$(stat http.inline.ext_proc.stream_msgs_received)
+if [ "$sent_inline" -gt 0 ] && [ "$sent_inline" = "$recv_inline" ]; then
+	pass "envoy: inline mode got one reply for each of its $sent_inline messages"
+else
+	fail "envoy: inline mode sent $sent_inline messages and received $recv_inline replies"
+fi
+
+# --- replay ------------------------------------------------------------------------------
+
+# The stack runs two fresh replay targets that are not behind Envoy: demo-api v1 (the
+# baseline, for noise suppression) and v2 (the candidate, with deliberate regressions).
+# Replaying the captured window against them exercises the time-window read and the diffs
+# topic against a real broker. The step is skipped when the compose file has no targets.
+services=$(compose config --services 2>/dev/null || true)
+if printf '%s\n' "$services" | grep -qx demo-api-candidate && printf '%s\n' "$services" | grep -qx demo-api-baseline; then
+	candidate=http://localhost:8082
+	baseline=http://localhost:8081
+	diffs_topic=shadowtap.diffs.v1
+	# Replay scrubs candidate responses with the tap's key, so recorded and live pseudonyms
+	# agree; the key is whatever compose gives the tap.
+	scrub_key=$(compose config 2>/dev/null | awk '$1 == "SHADOWTAP_SCRUB_KEY:" {print $2; exit}')
+	[ -n "$scrub_key" ] || scrub_key=local-dev-scrub-key-not-for-production
+	for url in "$candidate" "$baseline"; do
+		http_ok "$url/healthz" || fail "replay target $url is not answering"
+	done
+
+	log "Replaying the captures against demo-api v2 ($candidate) with the v1 baseline ($baseline)"
+	status=0
+	SHADOWTAP_SCRUB_KEY=$scrub_key "$bin/shadowtap" replay --brokers "$brokers" \
+		--target "$candidate" --baseline "$baseline" --speed max --concurrency 1 \
+		--method GET,HEAD,POST --allow-mutating --max-mismatch-rate 0 --max-error-rate 0 --fail-on-latency \
+		--tap-config deploy/local/tap.yaml --run-id e2e-v2 --publish-diffs --diffs-topic "$diffs_topic" \
+		--report-json "$out/replay-v2.json" --report-html "$out/replay-v2.html" --diffs-out "$out/replay-v2.ndjson" \
+		>"$out/replay-v2.txt" 2>"$out/replay-v2.log" || status=$?
+	# Exit 1 is the gate's verdict; errors (a failed Kafka publish, an unreadable window) are
+	# reported on stderr with the command's prefix.
+	if [ "$status" -eq 1 ] && ! grep -q '^shadowtap replay:' "$out/replay-v2.log" &&
+		grep -q 'phone_number' "$out/replay-v2.txt" && grep -q 'POST /api/orders  status changed' "$out/replay-v2.txt" &&
+		grep -q 'latency regression on .*POST /api/orders' "$out/replay-v2.txt"; then
+		pass "replay v2 against v1: renamed field, status change and latency regression reported, gate failed"
+	else
+		fail "replay v2 against v1 exited $status or missed a regression (report in $out/replay-v2.txt, log in $out/replay-v2.log)"
+	fi
+
+	replayed=$(count . "$out/replay-v2.ndjson")
+	# Offsets only, no payloads: the broker's end offsets of the diffs topic add up to the
+	# number of results published.
+	published=$(compose exec -T kafka /opt/kafka/bin/kafka-get-offsets.sh --bootstrap-server localhost:9092 \
+		--topic "$diffs_topic" 2>/dev/null | awk -F: '{n += $NF} END {print n + 0}')
+	if [ "$replayed" -gt 0 ] && [ "$published" = "$replayed" ]; then
+		pass "all $replayed replay results landed in $diffs_topic"
+	else
+		fail "$replayed results replayed but $published records in $diffs_topic"
+	fi
+
+	# Reports and diffs quote response values: they must hold pseudonyms only.
+	leaked=$(cat "$out"/replay-v2.ndjson "$out"/replay-v2.json "$out"/replay-v2.html "$out"/replay-v2.txt 2>/dev/null |
+		grep -c -F -f "$ledger" || true)
+	if [ "$values" -gt 0 ] && [ "$leaked" -eq 0 ]; then
+		pass "replay reports and diffs hold none of the $values PII values sent"
+	else
+		fail "$leaked lines of the replay reports contain PII values sent (inspect $out/replay-v2.* privately)"
+	fi
+else
+	log "No replay targets (demo-api-baseline, demo-api-candidate) in $compose_file; skipping the replay step"
+fi
 
 finish

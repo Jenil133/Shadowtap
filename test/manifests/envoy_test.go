@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	bootstrapv3 "github.com/envoyproxy/go-control-plane/envoy/config/bootstrap/v3"
+	_ "github.com/envoyproxy/go-control-plane/envoy/config/trace/v3"
 	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
 	_ "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/router/v3"
 	hcmv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
@@ -102,6 +103,14 @@ func TestLocalEnvoyBootstrap(t *testing.T) {
 					t.Fatalf("listener %s: %v", l.GetName(), err)
 				}
 				filters := hcm.GetHttpFilters()
+				if l.GetName() == "control" {
+					// The control listener measures the request path without the
+					// tap: only the router.
+					if len(filters) != 1 || filters[0].GetName() != "envoy.filters.http.router" {
+						t.Errorf("listener control: want only the router, got %d filters", len(filters))
+					}
+					continue
+				}
 				if len(filters) < 2 || filters[0].GetName() != extProcFilter || filters[len(filters)-1].GetName() != "envoy.filters.http.router" {
 					t.Errorf("listener %s: want ext_proc first and the router last", l.GetName())
 					continue

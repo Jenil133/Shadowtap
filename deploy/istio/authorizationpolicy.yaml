@@ -1,0 +1,34 @@
+# Only sidecars of captured workloads may open ext_proc streams. With an ALLOW policy in
+# place, Istio denies every request no rule matches, so a pod elsewhere in the mesh cannot
+# inject fabricated exchanges into the captures topic.
+#
+# Capturing another namespace: add it to the first rule (and label it
+# shadowtap.io/capture=enabled for the NetworkPolicy in deploy/k8s/base). Prefer listing
+# service accounts under principals ("cluster.local/ns/<ns>/sa/<sa>") to pin single workloads.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: shadowtap-tap
+  namespace: shadowtap
+  labels:
+    app.kubernetes.io/part-of: shadowtap
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: shadowtap-tap
+  action: ALLOW
+  rules:
+    # ext_proc from the captured workloads' sidecars (mTLS identity required).
+    - from:
+        - source:
+            namespaces: ["demo"]
+      to:
+        - operation:
+            ports: ["9002"]
+            paths: ["/envoy.service.ext_proc.v3.ExternalProcessor/Process", "/grpc.health.v1.Health/*"]
+    # Read-only admin endpoints for metrics scrapers and health checks.
+    - to:
+        - operation:
+            ports: ["9090"]
+            methods: ["GET"]
+            paths: ["/metrics", "/healthz", "/readyz"]

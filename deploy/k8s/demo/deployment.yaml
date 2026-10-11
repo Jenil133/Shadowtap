@@ -7,7 +7,7 @@ metadata:
     version: v1
 spec:
   # demo-api keeps its users and orders in memory: one replica keeps reads consistent with
-  # writes, so captured traffic replays the same way in Phase 2.
+  # writes, so captured traffic replays the same way.
   replicas: 1
   revisionHistoryLimit: 5
   selector:

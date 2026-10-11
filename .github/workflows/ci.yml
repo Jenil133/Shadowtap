@@ -63,6 +63,7 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # Also fails when a Fuzz* function in the tree is missing from the Makefile's list.
       - name: Fuzz every target for 10s
         run: make fuzz FUZZTIME=10s
 
@@ -72,52 +73,85 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: fuzz-failures
-          path: internal/*/testdata/fuzz/
+          path: |
+            internal/*/testdata/fuzz/
+            internal/*/*/testdata/fuzz/
+            cmd/*/testdata/fuzz/
+            examples/demo/api/testdata/fuzz/
           if-no-files-found: ignore
 
+  # Builds every image on each run; pushes to ghcr.io only for commits on main, so pull
+  # requests (including from forks) never get registry credentials.
   docker:
     name: docker (${{ matrix.image }})
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    env:
+      PUBLISH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - image: shadowtap-tap
             cmd: ./cmd/shadowtap-tap
-          - image: demo-api
+          - image: shadowtap
+            cmd: ./cmd/shadowtap
+          - image: shadowtap-indexer
+            cmd: ./cmd/shadowtap-indexer
+          - image: shadowtap-demo-api
             cmd: ./examples/demo/cmd/demo-api
     steps:
       - uses: actions/checkout@v4
 
       - uses: docker/setup-buildx-action@v3
 
+      - name: Log in to ghcr.io
+        if: env.PUBLISH == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The same names the Kubernetes manifests, compose and `make docker` use.
       - name: Build ${{ matrix.image }}
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: false
+          platforms: ${{ env.PUBLISH == 'true' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
+          push: ${{ env.PUBLISH == 'true' }}
           build-args: |
             CMD=${{ matrix.cmd }}
             VERSION=${{ github.sha }}
-          tags: shadowtap/${{ matrix.image }}:ci
+          tags: |
+            ghcr.io/jenil133/${{ matrix.image }}:sha-${{ github.sha }}
+            ghcr.io/jenil133/${{ matrix.image }}:latest
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }},ignore-error=true
 
   manifests:
     name: manifests
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
-      - name: Render kustomizations
-        run: |
-          for dir in deploy/k8s/base deploy/k8s/demo deploy/istio; do
-            echo "kubectl kustomize $dir"
-            kubectl kustomize "$dir" > /dev/null
-          done
+      # For scripts/otelconfig, which the Collector validation below runs.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # The Makefile lists every kustomization (tap, demo, replay, indexer, Istio, Collector)
+      # and fails when one is missing; test/manifests then checks the Envoy configuration
+      # against Envoy's API and the manifests, Makefile, compose file and this workflow
+      # against each other.
+      - name: Render every kustomization and cross-check the manifests
+        run: make manifests
 
       - name: Validate the compose file
         run: docker compose -f deploy/local/compose.yaml config --quiet
@@ -129,5 +163,45 @@ jobs:
           envoyproxy/envoy:v1.39-latest
           --mode validate -c /etc/envoy/envoy.yaml
 
+      # Runs the Collector's own `validate` command, from the image the manifests deploy,
+      # over every collector configuration the kustomization renders.
+      - name: Validate the OpenTelemetry Collector configuration
+        run: make collector
+
       - name: Check script syntax
-        run: bash -n scripts/e2e-local.sh
+        run: |
+          for f in scripts/*.sh; do
+            echo "bash -n $f"
+            bash -n "$f"
+          done
+
+  # The only test with a real Envoy and a real Kafka: compose up, seeded PII traffic through
+  # both ext_proc modes, the captures topic audited for leaks, Envoy's ext_proc counters
+  # checked, then the window replayed against the v2 candidate with the v1 baseline.
+  e2e:
+    name: e2e (compose)
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run the end-to-end test against the local stack
+        run: make e2e
+
+      # Logs only: the captures and PII ledgers under .e2e/local are deliberately not kept.
+      - name: Upload e2e logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs
+          path: |
+            .e2e/local/*.log
+            .e2e/local/check-pii.txt
+          if-no-files-found: ignore
+          retention-days: 3

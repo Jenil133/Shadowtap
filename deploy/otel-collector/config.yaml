@@ -1,0 +1,124 @@
+# OpenTelemetry Collector (contrib) for Shadowtap on Kubernetes. Istio sidecars, the tap, the
+# replayer, the indexer and the demo services send it OTLP; it tags everything with Kubernetes
+# metadata and buffers it in Kafka, where shadowtap-indexer picks it up for Elasticsearch. Kafka
+# in between means an Elasticsearch outage loses no telemetry, and a reindex is an offset reset.
+#
+#   OTLP gRPC :4317 / HTTP :4318 -> memory_limiter -> k8sattributes -> batch -> kafka
+#                                     traces: shadowtap.otel.spans.v1   (otlp_proto)
+#                                     logs:   shadowtap.otel.logs.v1    (otlp_proto)
+#
+# CI validates this file with the Collector's own `validate` command, run from the image pinned
+# in deployment.yaml (scripts/validate-otel-collector.sh), against an empty environment: every
+# ${env:...} placeholder therefore carries a default. deploy/local/otel-collector.yaml is the
+# same pipeline without k8sattributes for docker compose.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # First in every pipeline: refuse data instead of being OOM-killed. limit + spike stay below
+  # the 512Mi container limit in deployment.yaml; raise all three together.
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 384
+    spike_limit_mib: 96
+  # Adds k8s.namespace.name, k8s.pod.name, ... to every resource. Pods are matched through the
+  # resource attributes the Shadowtap binaries set from the downward API (k8s.pod.name +
+  # k8s.namespace.name) before the connection's source address, because behind the Collector's
+  # own Istio sidecar that address is the sidecar's, not the sender's.
+  k8sattributes:
+    auth_type: serviceAccount
+    passthrough: false
+    extract:
+      metadata:
+        - k8s.namespace.name
+        - k8s.pod.name
+        - k8s.pod.uid
+        - k8s.pod.start_time
+        - k8s.deployment.name
+        - k8s.node.name
+      labels:
+        - tag_name: k8s.pod.label.app
+          key: app
+          from: pod
+    pod_association:
+      - sources:
+          - from: resource_attribute
+            name: k8s.pod.name
+          - from: resource_attribute
+            name: k8s.namespace.name
+      - sources:
+          - from: resource_attribute
+            name: k8s.pod.uid
+      - sources:
+          - from: resource_attribute
+            name: k8s.pod.ip
+      - sources:
+          - from: connection
+  batch:
+    timeout: 1s
+    send_batch_size: 512
+    send_batch_max_size: 1024
+
+exporters:
+  kafka:
+    # One bootstrap address (the Strimzi bootstrap Service); the client discovers the brokers.
+    brokers:
+      - "${env:KAFKA_BROKERS:-shadowtap-kafka-bootstrap.kafka.svc:9092}"
+    client_id: otel-collector
+    traces:
+      topic: shadowtap.otel.spans.v1
+      encoding: otlp_proto
+    logs:
+      topic: shadowtap.otel.logs.v1
+      encoding: otlp_proto
+    # Records keyed by trace id: one trace's spans share a partition, so the indexer tends to
+    # see a trace together. Nothing depends on it.
+    partition_traces_by_id: true
+    producer:
+      compression: zstd
+      max_message_bytes: 1000000 # below the topics' max.message.bytes (1048576)
+      required_acks: -1 # every in-sync replica, like the tap (acks=all)
+    timeout: 10s
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 30s
+      max_elapsed_time: 5m
+    sending_queue:
+      enabled: true
+      num_consumers: 4
+      queue_size: 2000
+
+extensions:
+  # GET / on :13133 answers 200 while the pipelines run; the Deployment's probes use it.
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  telemetry:
+    logs:
+      level: info
+      encoding: json
+    metrics:
+      level: normal
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, k8sattributes, batch]
+      exporters: [kafka]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, k8sattributes, batch]
+      exporters: [kafka]
