@@ -1,0 +1,35 @@
+{
+  "captures": 1,
+  "diffs": 0,
+  "duration_us": 68765,
+  "logs": 0,
+  "services": 1,
+  "span_count": 2,
+  "spans": [
+    {
+      "depth": 0,
+      "duration_us": 48282,
+      "kind": "server",
+      "name": "ingress",
+      "service": "shadowtap-envoy",
+      "start_us": 0
+    },
+    {
+      "depth": 1,
+      "duration_us": 53153,
+      "kind": "client",
+      "name": "async envoy.service.ext_proc.v3.ExternalProcessor.Process egress",
+      "service": "shadowtap-envoy",
+      "start_us": 15612
+    },
+    {
+      "depth": 1,
+      "duration_us": 4647,
+      "kind": "capture",
+      "name": "capture POST /api/users",
+      "service": "demo-api",
+      "start_us": 62807
+    }
+  ],
+  "trace_id": "07a2d83e13c95b0982781a2501f433d0"
+}

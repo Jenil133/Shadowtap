@@ -1,0 +1,53 @@
+{
+  "candidate": {
+    "classes": {
+      "body_mismatch": 42,
+      "match": 919,
+      "status_mismatch": 239
+    },
+    "gate": "failed",
+    "gate_failures": [
+      "mismatch rate 23.42% above 0.00%",
+      "latency regression: candidate p95 41.65ms",
+      "latency regression on GET /api/orders/{id}, POST /api/orders"
+    ],
+    "noise_suppressed": 185,
+    "noisy_pointers": {
+      "GET /api/users": [
+        "body:/generated_at"
+      ]
+    },
+    "p95_ms": {
+      "baseline": 0.59,
+      "candidate": 41.65,
+      "production": 2.03
+    },
+    "regressions": [
+      "renamed field phone \u2192 phone_number",
+      "422 became 400 on POST /api/orders",
+      "+40 ms on POST /api/orders"
+    ],
+    "replayed": 1200,
+    "shared_with_baseline_suppressed": 12721
+  },
+  "same": {
+    "classes": {
+      "match": 1200
+    },
+    "gate": "passed",
+    "p95_ms": {
+      "baseline": 0.15,
+      "candidate": 0.15,
+      "production": 2.03
+    },
+    "replayed": 1200
+  },
+  "schedule": {
+    "dropped": 0,
+    "lag_p99_us": 0,
+    "original_span_s": 59.9,
+    "sent": 1200,
+    "took_s": 14.8
+  },
+  "speed": "max"
+}

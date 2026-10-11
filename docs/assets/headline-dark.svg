@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="230" viewBox="0 0 960 230" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" fill="#E5E7EB">
+<text x="0" y="22" font-size="15" font-weight="600" text-anchor="start" fill="#E5E7EB">Personal values that crossed the sidecar</text>
+<text x="0" y="44" font-size="15" font-weight="600" text-anchor="start" fill="#E5E7EB">and how many of them Kafka received</text>
+<text x="0" y="89" font-size="14" font-weight="normal" text-anchor="start" fill="#9CA3AF">sent in requests</text>
+<rect x="190" y="72" width="760" height="24" rx="5" fill="#1F2937" opacity="1.0"/>
+<rect x="190" y="72" width="760.0" height="24" rx="5" fill="#FBBF24" opacity="1.0"/>
+<text x="940.0" y="89" font-size="14" font-weight="600" text-anchor="end" fill="#FFFFFF">2,971</text>
+<text x="0" y="129" font-size="14" font-weight="normal" text-anchor="start" fill="#9CA3AF">found in any stored record</text>
+<rect x="190" y="112" width="760" height="24" rx="5" fill="#1F2937" opacity="1.0"/>
+<text x="200.0" y="129" font-size="14" font-weight="600" text-anchor="start" fill="#E5E7EB">0</text>
+<text x="0" y="169" font-size="14" font-weight="normal" text-anchor="start" fill="#9CA3AF">requests captured</text>
+<rect x="190" y="152" width="760" height="24" rx="5" fill="#1F2937" opacity="1.0"/>
+<rect x="190" y="152" width="760.0" height="24" rx="5" fill="#94A3B8" opacity="1.0"/>
+<text x="940.0" y="169" font-size="14" font-weight="600" text-anchor="end" fill="#FFFFFF">1,200 of 1,200</text>
+<text x="0" y="215" font-size="12" font-weight="normal" text-anchor="start" fill="#9CA3AF">A record counts as a leak when a value appears in its JSON, in any URL-decoded form or inside any JSON string of a body.</text>
+</svg>

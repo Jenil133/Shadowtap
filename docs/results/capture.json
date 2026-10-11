@@ -1,0 +1,40 @@
+{
+  "captured": 1200,
+  "latency_ms": {
+    "control": {
+      "max": 6.96,
+      "p50": 1.18,
+      "p95": 2.12
+    },
+    "inline": {
+      "max": 27.51,
+      "p50": 2.78,
+      "p95": 4.54
+    },
+    "observe": {
+      "max": 30.13,
+      "p50": 1.92,
+      "p95": 3.41
+    }
+  },
+  "modes": {
+    "inline": 600,
+    "observe": 600
+  },
+  "pii_audit_clean": true,
+  "pii_values_found_in_storage": 0,
+  "pii_values_sent": 2971,
+  "redactions": {
+    "card": 549,
+    "credential": 843,
+    "email": 3215,
+    "ipv4": 1533,
+    "ipv6": 171,
+    "jwt": 97,
+    "phone": 2270,
+    "sensitive_key": 11980,
+    "ssn": 2270
+  },
+  "requests": 1200,
+  "requests_per_listener": 600
+}

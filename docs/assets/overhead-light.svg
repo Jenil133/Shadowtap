@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="250" viewBox="0 0 960 250" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" fill="#1F2937">
+<text x="0" y="20" font-size="15" font-weight="600" text-anchor="start" fill="#1F2937">Request latency through Envoy, p50 and p95, by capture mode</text>
+<text x="0" y="74" font-size="14" font-weight="normal" text-anchor="start" fill="#6B7280">no tap (control)</text>
+<rect x="160" y="50" width="760" height="14" rx="3" fill="#F1F5F9" opacity="1.0"/>
+<rect x="160" y="50" width="197.53303964757708" height="14" rx="3" fill="#64748B" opacity="1.0"/>
+<text x="365.5330396475771" y="61" font-size="12" font-weight="600" text-anchor="start" fill="#1F2937">p50 1.18 ms</text>
+<rect x="160" y="68" width="760" height="14" rx="3" fill="#F1F5F9" opacity="1.0"/>
+<rect x="160" y="68" width="354.8898678414097" height="14" rx="3" fill="#64748B" opacity="0.55"/>
+<text x="522.8898678414097" y="79" font-size="12" font-weight="600" text-anchor="start" fill="#1F2937">p95 2.12 ms</text>
+<text x="0" y="134" font-size="14" font-weight="normal" text-anchor="start" fill="#6B7280">observe mode</text>
+<rect x="160" y="110" width="760" height="14" rx="3" fill="#F1F5F9" opacity="1.0"/>
+<rect x="160" y="110" width="321.40969162995594" height="14" rx="3" fill="#0F9D8A" opacity="1.0"/>
+<text x="489.40969162995594" y="121" font-size="12" font-weight="600" text-anchor="start" fill="#1F2937">p50 1.92 ms</text>
+<rect x="160" y="128" width="760" height="14" rx="3" fill="#F1F5F9" opacity="1.0"/>
+<rect x="160" y="128" width="570.8370044052863" height="14" rx="3" fill="#0F9D8A" opacity="0.55"/>
+<text x="738.8370044052863" y="139" font-size="12" font-weight="600" text-anchor="start" fill="#1F2937">p95 3.41 ms</text>
+<text x="0" y="194" font-size="14" font-weight="normal" text-anchor="start" fill="#6B7280">inline mode</text>
+<rect x="160" y="170" width="760" height="14" rx="3" fill="#F1F5F9" opacity="1.0"/>
+<rect x="160" y="170" width="465.374449339207" height="14" rx="3" fill="#E8A33D" opacity="1.0"/>
+<text x="633.374449339207" y="181" font-size="12" font-weight="600" text-anchor="start" fill="#1F2937">p50 2.78 ms</text>
+<rect x="160" y="188" width="760" height="14" rx="3" fill="#F1F5F9" opacity="1.0"/>
+<rect x="160" y="188" width="760.0" height="14" rx="3" fill="#E8A33D" opacity="0.55"/>
+<text x="912.0" y="199" font-size="12" font-weight="600" text-anchor="end" fill="#FFFFFF">p95 4.54 ms</text>
+<text x="0" y="240" font-size="12" font-weight="normal" text-anchor="start" fill="#6B7280">600 requests per listener from the load generator, same demo service behind every listener, one machine.</text>
+</svg>
