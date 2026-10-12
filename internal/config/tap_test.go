@@ -125,6 +125,38 @@ func TestEnvOverrides(t *testing.T) {
 	}
 }
 
+func TestTelemetryConfig(t *testing.T) {
+	cfg, err := LoadTap("", env(map[string]string{EnvScrubKey: testKey}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Telemetry.Enabled || cfg.Telemetry.ServiceName != "shadowtap-tap" {
+		t.Errorf("default telemetry = %+v", cfg.Telemetry)
+	}
+	cfg, err = LoadTap(writeFile(t, "tap.yaml", "telemetry:\n  enabled: true\n  endpoint: collector:4317\n  headers: {x-api-key: s3cret-value}\n"),
+		env(map[string]string{EnvScrubKey: testKey, EnvOTelEndpoint: "other:4317"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Telemetry.Enabled || cfg.Telemetry.Endpoint != "other:4317" {
+		t.Errorf("env override lost: %+v", cfg.Telemetry)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	out, err := cfg.YAML()
+	if err != nil || strings.Contains(string(out), "s3cret-value") {
+		t.Errorf("header value rendered: %v\n%s", err, out)
+	}
+	if _, err := LoadTap("", env(map[string]string{EnvScrubKey: testKey, EnvOTelEnabled: "maybe"})); err == nil {
+		t.Error("bad SHADOWTAP_OTEL_ENABLED accepted")
+	}
+	cfg.Telemetry.SampleRatio = 2
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "sample_ratio") {
+		t.Errorf("telemetry validation not joined: %v", err)
+	}
+}
+
 func TestPodNameDoesNotOverrideFile(t *testing.T) {
 	cfg, err := LoadTap(writeFile(t, "tap.yaml", "tap:\n  name: explicit\n"), env(map[string]string{EnvPodName: "pod"}))
 	if err != nil {

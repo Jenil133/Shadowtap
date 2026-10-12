@@ -144,7 +144,10 @@ func (s *store) listUsers(email string, limit int, desc bool) (users []User, tot
 
 // addOrder stores an order for a validated, normalized request. The order id
 // uses the user's next sequence number, so identical carts get distinct ids.
-func (s *store) addOrder(req *CreateOrderRequest) (*Order, error) {
+// addOrder stores an order for a user the caller has already resolved (the
+// users service may live in another process); billingEmail is that user's
+// email.
+func (s *store) addOrder(req *CreateOrderRequest, billingEmail string) (*Order, error) {
 	var total int64
 	for _, it := range req.Items {
 		total += int64(it.Qty) * it.PriceCents
@@ -152,10 +155,6 @@ func (s *store) addOrder(req *CreateOrderRequest) (*Order, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	rec, ok := s.users[req.UserID]
-	if !ok {
-		return nil, errUserNotFound
-	}
 	seq := s.orderSeq[req.UserID] + 1
 	o := &Order{
 		ID:         OrderID(req.UserID, req.Items, seq),
@@ -167,7 +166,7 @@ func (s *store) addOrder(req *CreateOrderRequest) (*Order, error) {
 			CardNumber: req.Payment.CardNumber,
 			Exp:        req.Payment.Exp,
 		},
-		BillingEmail: rec.user.Email,
+		BillingEmail: billingEmail,
 	}
 	s.orderSeq[req.UserID] = seq
 	s.orders[o.ID] = o

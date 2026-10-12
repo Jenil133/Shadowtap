@@ -7,11 +7,15 @@
     "checks": 12,
     "passed": 12
   },
+  "e2e_observability": {
+    "checks": 5,
+    "passed": 5
+  },
   "failed": 0,
   "fuzz_targets": 14,
   "go_lines": 47548,
   "go_packages": 30,
   "packages": 28,
-  "subtests": 1050,
-  "tests": 479
+  "subtests": 1053,
+  "tests": 487
 }

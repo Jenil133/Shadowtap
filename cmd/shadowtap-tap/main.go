@@ -32,6 +32,7 @@ import (
 	"github.com/Jenil133/Shadowtap/internal/sampling"
 	"github.com/Jenil133/Shadowtap/internal/scrub"
 	"github.com/Jenil133/Shadowtap/internal/tap"
+	"github.com/Jenil133/Shadowtap/internal/telemetry"
 )
 
 var version = "dev"
@@ -39,12 +40,14 @@ var version = "dev"
 // Shutdown budget. Each step gets its own deadline, so a slow step cannot
 // leave the next one with an expired context (a queue drain that runs out
 // the clock must still leave Kafka time to flush what was drained). Together
-// they stay under the pod's 30 s grace period.
+// they stay under the pod's 30 s grace period (28 s, which the manifests
+// assume).
 const (
-	grpcStopTimeout  = 12 * time.Second
-	drainTimeout     = 7 * time.Second
-	flushTimeout     = 7 * time.Second
-	adminStopTimeout = 2 * time.Second
+	grpcStopTimeout      = 12 * time.Second
+	drainTimeout         = 7 * time.Second
+	flushTimeout         = 5 * time.Second
+	telemetryStopTimeout = 2 * time.Second
+	adminStopTimeout     = 2 * time.Second
 )
 
 func main() {
@@ -92,10 +95,15 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 	if err != nil {
 		return err
 	}
-
-	a, err := newApp(cfg, logger)
+	// Capture spans join the captured request's trace; the logger gains
+	// trace ids and an OTLP copy. Nothing changes when telemetry is off.
+	providers, err := telemetry.Setup(ctx, cfg.Telemetry, logger.Handler())
 	if err != nil {
 		return err
+	}
+	a, err := newApp(cfg, providers.Logger, providers)
+	if err != nil {
+		return errors.Join(err, providers.Shutdown(context.Background()))
 	}
 	grpcLn, err := net.Listen("tcp", cfg.Listen.GRPC)
 	if err != nil {
@@ -121,9 +129,10 @@ type app struct {
 	health   *health.Server
 	ready    *admin.Readiness
 	admin    *admin.Server
+	telem    *telemetry.Providers
 }
 
-func newApp(cfg config.Tap, log *slog.Logger, kafkaOpts ...kgo.Opt) (*app, error) {
+func newApp(cfg config.Tap, log *slog.Logger, providers *telemetry.Providers, kafkaOpts ...kgo.Opt) (*app, error) {
 	reg := prometheus.NewRegistry()
 	buildInfo := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "shadowtap_build_info",
@@ -148,7 +157,7 @@ func newApp(cfg config.Tap, log *slog.Logger, kafkaOpts ...kgo.Opt) (*app, error
 	if err != nil {
 		return nil, err
 	}
-	tapServer, err := tap.New(cfg.Tap, sampler, scrubber, producer, reg, log)
+	tapServer, err := tap.New(cfg.Tap, sampler, scrubber, producer, reg, log, tap.WithTracerProvider(providers.TracerProvider()))
 	if err != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), drainTimeout)
 		defer cancel()
@@ -179,6 +188,7 @@ func newApp(cfg config.Tap, log *slog.Logger, kafkaOpts ...kgo.Opt) (*app, error
 		health:   hs,
 		ready:    ready,
 		admin:    admin.New(reg, ready.Check, log),
+		telem:    providers,
 	}, nil
 }
 
@@ -243,6 +253,7 @@ func (a *app) shutdown() error {
 	}
 	step("drain captures", drainTimeout, a.tap.Shutdown)
 	step("flush kafka", flushTimeout, a.producer.Close)
+	step("flush telemetry", telemetryStopTimeout, a.telem.Shutdown)
 	step("stop admin server", adminStopTimeout, a.admin.Shutdown)
 	a.log.Info("shutdown complete")
 	return errors.Join(errs...)

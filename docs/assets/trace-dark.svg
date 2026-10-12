@@ -1,16 +1,44 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="168" viewBox="0 0 960 168" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" fill="#E5E7EB">
-<text x="0" y="20" font-size="15" font-weight="600" text-anchor="start" fill="#E5E7EB">One request, one query: everything stored for trace 07a2d83e13c9…</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="350" viewBox="0 0 960 350" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" fill="#E5E7EB">
+<text x="0" y="20" font-size="15" font-weight="600" text-anchor="start" fill="#E5E7EB">One request, one query: everything stored for trace 0d52bbe1b5fc…</text>
 <text x="0" y="58" font-size="12" font-weight="600" text-anchor="start" fill="#9CA3AF">shadowtap-envoy</text>
 <text x="130" y="58" font-size="12" font-weight="normal" text-anchor="start" fill="#E5E7EB" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">ingress</text>
-<rect x="360.0" y="46" width="379.1504399040209" height="16" rx="3" fill="#94A3B8" opacity="1.0"/>
-<text x="745.1504399040209" y="58" font-size="11" font-weight="normal" text-anchor="start" fill="#9CA3AF">48.3 ms</text>
+<rect x="360.0" y="46" width="130.00173822353554" height="16" rx="3" fill="#94A3B8" opacity="1.0"/>
+<text x="496.00173822353554" y="58" font-size="11" font-weight="normal" text-anchor="start" fill="#9CA3AF">6.9 ms</text>
 <text x="14" y="84" font-size="12" font-weight="600" text-anchor="start" fill="#9CA3AF">shadowtap-envoy</text>
 <text x="144" y="84" font-size="12" font-weight="normal" text-anchor="start" fill="#E5E7EB" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">async envoy.service.ext_proc.v3.Ex</text>
-<rect x="482.59841489129644" y="72" width="417.40158510870356" height="16" rx="3" fill="#2DD4BF" opacity="1.0"/>
-<text x="476.59841489129644" y="84" font-size="11" font-weight="normal" text-anchor="end" fill="#9CA3AF">53.2 ms</text>
-<text x="14" y="110" font-size="12" font-weight="600" text-anchor="start" fill="#9CA3AF">demo-api</text>
-<text x="144" y="110" font-size="12" font-weight="normal" text-anchor="start" fill="#E5E7EB" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">capture POST /api/users</text>
-<rect x="853.2128262924452" y="98" width="36.49211081218643" height="16" rx="3" fill="#FBBF24" opacity="1.0"/>
-<text x="847.2128262924452" y="110" font-size="11" font-weight="normal" text-anchor="end" fill="#9CA3AF">4.6 ms</text>
-<text x="0" y="140" font-size="12" font-weight="normal" text-anchor="start" fill="#9CA3AF">2 spans, 1 capture record and 0 log records share this trace id; found 1 service(s).</text>
+<rect x="361.8209629758387" y="72" width="133.69998261776465" height="16" rx="3" fill="#2DD4BF" opacity="1.0"/>
+<text x="501.52094559360336" y="84" font-size="11" font-weight="normal" text-anchor="start" fill="#9CA3AF">7.1 ms</text>
+<text x="14" y="110" font-size="12" font-weight="600" text-anchor="start" fill="#9CA3AF">demo-gateway</text>
+<text x="144" y="110" font-size="12" font-weight="normal" text-anchor="start" fill="#E5E7EB" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">POST /api/orders</text>
+<rect x="371.4889622805493" y="98" width="111.51051625239006" height="16" rx="3" fill="#94A3B8" opacity="1.0"/>
+<text x="488.99947853293935" y="110" font-size="11" font-weight="normal" text-anchor="start" fill="#9CA3AF">5.9 ms</text>
+<text x="28" y="136" font-size="12" font-weight="600" text-anchor="start" fill="#9CA3AF">demo-gateway</text>
+<text x="158" y="136" font-size="12" font-weight="normal" text-anchor="start" fill="#E5E7EB" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">HTTP POST</text>
+<rect x="372.08969233443423" y="124" width="110.36537458717191" height="16" rx="3" fill="#94A3B8" opacity="1.0"/>
+<text x="488.45506692160615" y="136" font-size="11" font-weight="normal" text-anchor="start" fill="#9CA3AF">5.9 ms</text>
+<text x="42" y="162" font-size="12" font-weight="600" text-anchor="start" fill="#9CA3AF">demo-orders</text>
+<text x="172" y="162" font-size="12" font-weight="normal" text-anchor="start" fill="#E5E7EB" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">POST /api/orders</text>
+<rect x="404.5478880584043" y="150" width="74.73457326612203" height="16" rx="3" fill="#94A3B8" opacity="1.0"/>
+<text x="485.2824613245263" y="162" font-size="11" font-weight="normal" text-anchor="start" fill="#9CA3AF">4.0 ms</text>
+<text x="56" y="188" font-size="12" font-weight="600" text-anchor="start" fill="#9CA3AF">demo-orders</text>
+<text x="186" y="188" font-size="12" font-weight="normal" text-anchor="start" fill="#E5E7EB" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">HTTP GET</text>
+<rect x="417.1444463758039" y="176" width="60.09177820267686" height="16" rx="3" fill="#94A3B8" opacity="1.0"/>
+<text x="483.2362245784808" y="188" font-size="11" font-weight="normal" text-anchor="start" fill="#9CA3AF">3.2 ms</text>
+<text x="70" y="214" font-size="12" font-weight="600" text-anchor="start" fill="#9CA3AF">demo-users</text>
+<text x="200" y="214" font-size="12" font-weight="normal" text-anchor="start" fill="#E5E7EB" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">GET /api/users/{id}</text>
+<rect x="439.7469146532244" y="202" width="2" height="16" rx="3" fill="#94A3B8" opacity="1.0"/>
+<text x="447.7469146532244" y="214" font-size="11" font-weight="normal" text-anchor="start" fill="#9CA3AF">0.1 ms</text>
+<text x="0" y="240" font-size="12" font-weight="600" text-anchor="start" fill="#9CA3AF">shadowtap-tap</text>
+<text x="130" y="240" font-size="12" font-weight="normal" text-anchor="start" fill="#E5E7EB" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">shadowtap.capture</text>
+<rect x="492.38588562489133" y="228" width="2" height="16" rx="3" fill="#2DD4BF" opacity="1.0"/>
+<text x="500.38588562489133" y="240" font-size="11" font-weight="normal" text-anchor="start" fill="#9CA3AF">0.1 ms</text>
+<text x="14" y="266" font-size="12" font-weight="600" text-anchor="start" fill="#9CA3AF">shadowtap-tap</text>
+<text x="144" y="266" font-size="12" font-weight="normal" text-anchor="start" fill="#E5E7EB" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">shadowtap.kafka.produce</text>
+<rect x="493.3996175908222" y="254" width="406.6003824091778" height="16" rx="3" fill="#2DD4BF" opacity="1.0"/>
+<text x="487.3996175908222" y="266" font-size="11" font-weight="normal" text-anchor="end" fill="#9CA3AF">21.7 ms</text>
+<text x="14" y="292" font-size="12" font-weight="600" text-anchor="start" fill="#9CA3AF">demo-api</text>
+<text x="144" y="292" font-size="12" font-weight="normal" text-anchor="start" fill="#E5E7EB" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">capture POST /api/orders</text>
+<rect x="372.6153311315835" y="280" width="119.28246132452634" height="16" rx="3" fill="#FBBF24" opacity="1.0"/>
+<text x="497.89779245610987" y="292" font-size="11" font-weight="normal" text-anchor="start" fill="#9CA3AF">6.4 ms</text>
+<text x="0" y="322" font-size="12" font-weight="normal" text-anchor="start" fill="#9CA3AF">9 spans, 1 capture record and 3 log records share this trace id; found 5 service(s).</text>
 </svg>

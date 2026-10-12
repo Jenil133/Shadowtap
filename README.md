@@ -106,20 +106,20 @@ The candidate differed from the baseline in 12,721 places that were identical be
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/trace-dark.svg">
-  <img alt="One request followed through Envoy and the tap by its trace id" src="docs/assets/trace-light.svg" width="960">
+  <img alt="One request followed through Envoy, three services and the tap by its trace id" src="docs/assets/trace-light.svg" width="960">
 </picture>
 
 | `shadowtap trace` for one request | Found | Where it came from |
 |---|---|---|
-| sidecar spans | 2, the ingress and its ext_proc stream | Envoy's OpenTelemetry tracer, through the Collector and Kafka |
+| spans | 9 from 5 services: Envoy, gateway, users, orders, the tap's capture and produce | OpenTelemetry through the Collector and Kafka |
+| logs | 3, one per demo service, each carrying the trace id | the services' process logs over OTLP |
 | capture record | 1, with its redaction counts | the tap, through Kafka |
-| time from request to answer | 5 s | the indexer's batch interval plus Elasticsearch refresh |
 
 ## Correctness
 
 | Configuration | Tests | Result |
 |---|---|---|
-| `go test -race ./...`, 28 packages, Go 1.26 on darwin/arm64 | 479 tests, 1,050 subtests | pass |
+| `go test -race ./...`, 28 packages, Go 1.26 on darwin/arm64 | 487 tests, 1,053 subtests | pass |
 | `go test -fuzz`, 14 targets, 10 s each | 27.4 million executions, 14 inputs kept as regression seeds | pass |
 | end to end without Docker: Envoy 1.39.1, in-memory broker, both capture modes, both replays | 12 checks | pass |
 | end to end with Docker: Kafka 4.3.1 and Envoy v1.39 containers, linux/arm64 | 8 checks | pass |
@@ -150,7 +150,7 @@ The candidate differed from the baseline in 12,721 places that were identical be
 | Detectors know emails, cards, SSNs, phones, IPs, JWTs, API keys and named fields | a name in free text, an OAuth code or an IPv6 address in a path is not redacted |
 | Pseudonyms are keyed per deployment | rotating the key breaks joins with older captures |
 | Mutating requests replay only with `--allow-mutating`, noise is learned for safe methods only | candidates need disposable state and ignore rules for fields that change on writes |
-| The tap and demo binaries do not read a telemetry block yet | their spans export only when a tracer provider is wired in; the replayer and indexer export today |
+| URL attributes of exported spans are reduced to the route template | a trace shows which route a hop served, never the exact path or query |
 | The local stack runs one Elasticsearch node without authentication | a layout for laptops, not for a cluster |
 | Overhead numbers come from one laptop | compare the rows with each other, not with production |
 

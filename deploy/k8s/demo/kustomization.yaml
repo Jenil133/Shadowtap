@@ -1,4 +1,5 @@
-# demo-api: a PII-heavy JSON API to capture from. Install the tap (../base) first, then this,
+# The demo application: demo-api (the gateway Envoy captures from), demo-users and demo-orders,
+# a PII-heavy JSON API to capture from. Install the tap (../base) first, then this,
 # then the EnvoyFilter (../../istio) that streams demo-api's inbound traffic to the tap.
 #
 #   kubectl apply -k deploy/k8s/demo
@@ -15,3 +16,5 @@ resources:
   - serviceaccount.yaml
   - deployment.yaml
   - service.yaml
+  - demo-users.yaml
+  - demo-orders.yaml

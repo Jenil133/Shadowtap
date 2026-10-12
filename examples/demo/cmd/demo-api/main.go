@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/Jenil133/Shadowtap/examples/demo/api"
+	"github.com/Jenil133/Shadowtap/internal/telemetry"
 )
 
 // version is the build version, set with -ldflags "-X main.version=...".
@@ -35,6 +36,11 @@ type config struct {
 	apiVersion      string
 	logLevel        slog.Level
 	shutdownTimeout time.Duration
+	role            api.Role
+	usersURL        string
+	ordersURL       string
+	serviceName     string
+	telemetry       telemetry.Config
 }
 
 // errUsage marks command-line errors; flag has already explained them.
@@ -68,8 +74,26 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	logger := slog.New(slog.NewJSONHandler(stderr, &slog.HandlerOptions{Level: cfg.logLevel}))
-	a, err := api.New(api.Options{Version: cfg.apiVersion, Logger: logger})
+	providers, err := telemetry.Setup(ctx, cfg.telemetry, slog.NewJSONHandler(stderr, &slog.HandlerOptions{Level: cfg.logLevel}))
+	if err != nil {
+		return err
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := providers.Shutdown(shutdownCtx); err != nil {
+			fmt.Fprintf(stderr, "demo-api: telemetry: %v\n", err)
+		}
+	}()
+	logger := providers.Logger
+	a, err := api.New(api.Options{
+		Version:        cfg.apiVersion,
+		Logger:         logger,
+		Role:           cfg.role,
+		UsersURL:       cfg.usersURL,
+		OrdersURL:      cfg.ordersURL,
+		TracerProvider: providers.TracerProvider(),
+	})
 	if err != nil {
 		return err
 	}
@@ -78,7 +102,7 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 		return fmt.Errorf("listen: %w", err)
 	}
 	logger.Info("demo-api listening",
-		"addr", ln.Addr().String(), "api_version", a.Version(), "build_version", version)
+		"addr", ln.Addr().String(), "role", string(cfg.role), "api_version", a.Version(), "build_version", version)
 	return serve(ctx, ln, a.Handler(), logger, cfg.shutdownTimeout)
 }
 
@@ -91,6 +115,13 @@ func parseFlags(args []string, output io.Writer) (config, error) {
 	fs.StringVar(&cfg.apiVersion, "version", api.VersionV1, "API behaviour version: v1, or v2 (a candidate with deliberate regressions)")
 	fs.StringVar(&level, "log-level", "info", "log level: debug, info, warn or error")
 	fs.DurationVar(&cfg.shutdownTimeout, "shutdown-timeout", 10*time.Second, "how long to wait for in-flight requests on shutdown")
+	var role string
+	fs.StringVar(&role, "role", "all", "part of the application to serve: all, gateway, users or orders")
+	fs.StringVar(&cfg.usersURL, "users-url", "", "base URL of the users service (gateway and orders roles)")
+	fs.StringVar(&cfg.ordersURL, "orders-url", "", "base URL of the orders service (gateway role)")
+	fs.StringVar(&cfg.serviceName, "service-name", "", "service.name of this process's spans and logs (default demo-<role>)")
+	fs.BoolVar(&cfg.telemetry.Enabled, "otel", false, "export spans and logs over OTLP")
+	fs.StringVar(&cfg.telemetry.Endpoint, "otel-endpoint", "", "OTLP gRPC collector host:port (default $OTEL_EXPORTER_OTLP_ENDPOINT or localhost:4317)")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return config{}, err
@@ -109,6 +140,21 @@ func parseFlags(args []string, output io.Writer) (config, error) {
 		fmt.Fprintln(output, "--shutdown-timeout must be positive")
 		return config{}, errUsage
 	}
+	r, err := api.ParseRole(role)
+	if err != nil {
+		fmt.Fprintf(output, "invalid --role: %v\n", err)
+		return config{}, errUsage
+	}
+	cfg.role = r
+	if cfg.serviceName == "" {
+		cfg.serviceName = "demo-" + string(r)
+		if r == api.RoleAll {
+			cfg.serviceName = "demo-api"
+		}
+	}
+	cfg.telemetry.ServiceName = cfg.serviceName
+	cfg.telemetry.SampleRatio = 1
+	cfg.telemetry.Insecure = true
 	return cfg, nil
 }
 

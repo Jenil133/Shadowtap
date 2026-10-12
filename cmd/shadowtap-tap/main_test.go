@@ -22,6 +22,7 @@ import (
 	"github.com/Jenil133/Shadowtap/internal/config"
 	"github.com/Jenil133/Shadowtap/internal/kafka"
 	"github.com/Jenil133/Shadowtap/internal/tap/taptest"
+	"github.com/Jenil133/Shadowtap/internal/telemetry"
 )
 
 const testScrubKey = "main-test-scrub-key-0123456789"
@@ -88,7 +89,11 @@ func TestServeCapturesScrubsAndShutsDown(t *testing.T) {
 	}
 
 	var logs syncBuffer
-	a, err := newApp(cfg, slog.New(slog.NewJSONHandler(&logs, nil)))
+	providers, err := telemetry.Setup(context.Background(), cfg.Telemetry, slog.NewJSONHandler(&logs, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := newApp(cfg, providers.Logger, providers)
 	if err != nil {
 		t.Fatal(err)
 	}

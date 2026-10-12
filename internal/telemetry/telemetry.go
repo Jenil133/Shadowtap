@@ -72,6 +72,15 @@ func (p *Providers) Tracer(name string, opts ...trace.TracerOption) trace.Tracer
 	return p.tracerProvider.Tracer(name, opts...)
 }
 
+// TracerProvider returns the configured provider, a no-op one when telemetry
+// is disabled, for components that take a provider rather than a tracer.
+func (p *Providers) TracerProvider() trace.TracerProvider {
+	if p == nil || p.tracerProvider == nil {
+		return noop.NewTracerProvider()
+	}
+	return p.tracerProvider
+}
+
 // Shutdown flushes queued spans, logs and metrics and stops the exporters,
 // bounded by ctx. Errors from every provider are joined. The first call does
 // the work and reports its errors; a call that overlaps it waits for it to
@@ -162,7 +171,9 @@ func Setup(ctx context.Context, cfg Config, base slog.Handler) (*Providers, erro
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithResource(res),
 		sdktrace.WithSampler(newSampler(cfg.SampleRatio)),
-		sdktrace.WithBatcher(traceExporter),
+		// URL attributes are reduced to the route before export: paths and
+		// queries carry personal data.
+		sdktrace.WithBatcher(redactingExporter{traceExporter}),
 	)
 	steps := []shutdownStep{{"tracer provider", tp.Shutdown}}
 	// cleanup undoes what was built if a later step fails, so Setup never

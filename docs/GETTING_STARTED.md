@@ -56,16 +56,17 @@ make replay
 The candidate carries three deliberate regressions, so the replay names them and the gate fails:
 `shadowtap replay` exits with status 1, which is what a release pipeline would act on.
 
-Follow one captured request across Envoy, the tap and the stored record (the indexer needs a few
-seconds to catch up after the traffic):
+Follow one captured request across Envoy, the three demo services, the tap and the stored record
+(the indexer needs a few seconds to catch up after the traffic):
 
 ```sh
 TRACE=$(bin/shadowtap tail --brokers localhost:29092 --from earliest --timeout 5s --limit 1 --format json | python3 -c 'import json,sys; print(json.loads(sys.stdin.readline())["trace_id"])')
 bin/shadowtap trace --es http://localhost:9200 "$TRACE"
 ```
 
-Kibana is on http://localhost:5601; `deploy/kibana/import.sh` loads the data views and the
-dashboard. Stop everything and delete the data with:
+`make e2e-observability` runs that whole chain as a test. Kibana is on http://localhost:5601;
+`deploy/kibana/import.sh` loads the data views and the dashboard. Stop everything and delete the
+data with:
 
 ```sh
 make down

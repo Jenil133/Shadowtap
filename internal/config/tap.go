@@ -18,6 +18,7 @@ import (
 	"github.com/Jenil133/Shadowtap/internal/sampling"
 	"github.com/Jenil133/Shadowtap/internal/scrub"
 	"github.com/Jenil133/Shadowtap/internal/tap"
+	"github.com/Jenil133/Shadowtap/internal/telemetry"
 )
 
 // Environment variables read by LoadTap.
@@ -31,6 +32,8 @@ const (
 	EnvGRPCAddr          = "SHADOWTAP_GRPC_ADDR"
 	EnvHTTPAddr          = "SHADOWTAP_HTTP_ADDR"
 	EnvPodName           = "POD_NAME"
+	EnvOTelEnabled       = "SHADOWTAP_OTEL_ENABLED"
+	EnvOTelEndpoint      = "SHADOWTAP_OTEL_ENDPOINT"
 )
 
 // Limits on tap settings that would otherwise exhaust memory.
@@ -48,6 +51,8 @@ type Tap struct {
 	Sampling sampling.Config `json:"sampling"`
 	Scrub    Scrub           `json:"scrub"`
 	Kafka    kafka.Config    `json:"kafka"`
+	// Telemetry exports the tap's capture spans and logs over OTLP.
+	Telemetry telemetry.Config `json:"telemetry"`
 }
 
 // Log configures the process logger.
@@ -77,6 +82,9 @@ type Scrub struct {
 func DefaultTap() Tap {
 	k := kafka.DefaultConfig()
 	k.ClientID = "shadowtap-tap"
+	tel := telemetry.DefaultConfig()
+	tel.ServiceName = "shadowtap-tap"
+	tel.Insecure = true // plaintext to an in-cluster Collector; set insecure: false for TLS
 	return Tap{
 		Log:      Log{Level: "info", Format: "json"},
 		Listen:   Listen{GRPC: ":9002", HTTP: ":9090"},
@@ -86,7 +94,8 @@ func DefaultTap() Tap {
 			Config: scrub.Config{MaxDecodedBytes: scrub.DefaultMaxDecodedBytes},
 			KeyEnv: EnvScrubKey,
 		},
-		Kafka: k,
+		Kafka:     k,
+		Telemetry: tel,
 	}
 }
 
@@ -138,6 +147,16 @@ func (c *Tap) applyEnv(getenv func(string) string) error {
 	}
 	if c.Tap.Name == "" {
 		c.Tap.Name = strings.TrimSpace(getenv(EnvPodName))
+	}
+	if v := strings.TrimSpace(getenv(EnvOTelEnabled)); v != "" {
+		enabled, err := strconv.ParseBool(v)
+		if err != nil {
+			return fmt.Errorf("config: %s: %w", EnvOTelEnabled, err)
+		}
+		c.Telemetry.Enabled = enabled
+	}
+	if v := strings.TrimSpace(getenv(EnvOTelEndpoint)); v != "" {
+		c.Telemetry.Endpoint = v
 	}
 	return nil
 }
@@ -219,6 +238,9 @@ func (c Tap) Validate() error {
 	if err := c.Kafka.Validate(); err != nil {
 		errs = append(errs, err)
 	}
+	if err := c.Telemetry.Validate(); err != nil {
+		errs = append(errs, err)
+	}
 	if err := errors.Join(errs...); err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
@@ -227,6 +249,7 @@ func (c Tap) Validate() error {
 
 // YAML renders the configuration with secrets omitted.
 func (c Tap) YAML() ([]byte, error) {
+	c.Telemetry = c.Telemetry.Redacted() // header values may hold credentials
 	return yaml.Marshal(c)
 }
 

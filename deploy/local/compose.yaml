@@ -78,6 +78,9 @@ services:
         create shadowtap.indexer.dlq.v1    # records the indexer could not index
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
 
+  # The demo application as three services, so one request crosses three traced hops:
+  # demo-api is the gateway Envoy fronts, demo-users owns users and login, demo-orders owns
+  # orders and asks demo-users whether an order's user exists.
   demo-api:
     image: ghcr.io/jenil133/shadowtap-demo-api:dev
     build:
@@ -85,13 +88,42 @@ services:
       dockerfile: Dockerfile
       args:
         CMD: ./examples/demo/cmd/demo-api
-    command: ["--addr", ":8080", "--version", "v1"]
+    command: ["--addr", ":8080", "--version", "v1", "--role", "gateway",
+              "--users-url", "http://demo-users:8080", "--orders-url", "http://demo-orders:8080",
+              "--otel", "--otel-endpoint", "otel-collector:4317"]
     # Distroless has no shell or curl, so there is no container healthcheck; the e2e script
     # probes GET /healthz through Envoy instead.
     expose:
       - "8080"
     depends_on:
       - otel-collector
+      - demo-users
+      - demo-orders
+  demo-users:
+    image: ghcr.io/jenil133/shadowtap-demo-api:dev
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        CMD: ./examples/demo/cmd/demo-api
+    command: ["--addr", ":8080", "--version", "v1", "--role", "users", "--otel", "--otel-endpoint", "otel-collector:4317"]
+    expose:
+      - "8080"
+    depends_on:
+      - otel-collector
+  demo-orders:
+    image: ghcr.io/jenil133/shadowtap-demo-api:dev
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        CMD: ./examples/demo/cmd/demo-api
+    command: ["--addr", ":8080", "--version", "v1", "--role", "orders", "--users-url", "http://demo-users:8080", "--otel", "--otel-endpoint", "otel-collector:4317"]
+    expose:
+      - "8080"
+    depends_on:
+      - otel-collector
+      - demo-users
 
   tap:
     image: ghcr.io/jenil133/shadowtap-tap:dev

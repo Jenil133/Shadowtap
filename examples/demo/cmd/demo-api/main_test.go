@@ -7,10 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"github.com/Jenil133/Shadowtap/examples/demo/api"
+	"github.com/Jenil133/Shadowtap/internal/telemetry"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -26,12 +29,12 @@ func TestParseFlags(t *testing.T) {
 	}{
 		{
 			name: "defaults",
-			want: config{addr: ":8080", apiVersion: "v1", logLevel: slog.LevelInfo, shutdownTimeout: 10 * time.Second},
+			want: withDefaults(config{addr: ":8080", apiVersion: "v1", logLevel: slog.LevelInfo, shutdownTimeout: 10 * time.Second}),
 		},
 		{
 			name: "all flags",
 			args: []string{"--addr", "127.0.0.1:9000", "--version", "v1", "--log-level", "DEBUG", "--shutdown-timeout", "3s"},
-			want: config{addr: "127.0.0.1:9000", apiVersion: "v1", logLevel: slog.LevelDebug, shutdownTimeout: 3 * time.Second},
+			want: withDefaults(config{addr: "127.0.0.1:9000", apiVersion: "v1", logLevel: slog.LevelDebug, shutdownTimeout: 3 * time.Second}),
 		},
 		{name: "bad log level", args: []string{"--log-level", "loud"}, wantErr: errUsage},
 		{name: "bad timeout", args: []string{"--shutdown-timeout", "0s"}, wantErr: errUsage},
@@ -45,7 +48,7 @@ func TestParseFlags(t *testing.T) {
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tc.wantErr)
 			}
-			if err == nil && got != tc.want {
+			if err == nil && !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("config = %+v, want %+v", got, tc.want)
 			}
 		})
@@ -215,4 +218,12 @@ func TestServeShutdownTimeout(t *testing.T) {
 	if err := <-done; !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("serve = %v, want a deadline error", err)
 	}
+}
+
+// withDefaults fills the fields every parse sets from the role.
+func withDefaults(c config) config {
+	c.role = api.RoleAll
+	c.serviceName = "demo-api"
+	c.telemetry = telemetry.Config{Insecure: true, ServiceName: "demo-api", SampleRatio: 1}
+	return c
 }

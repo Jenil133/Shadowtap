@@ -48,7 +48,7 @@ endef
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build test race cover fuzz fuzz-list vet fmt lint tidy docker kustomize manifests collector up down logs e2e e2e-native replay clean
+.PHONY: help build test race cover fuzz fuzz-list vet fmt lint tidy docker kustomize manifests collector up down logs e2e e2e-native e2e-observability replay clean
 
 help: ## List the available targets
 	@echo "Usage: make <target> [VAR=value]"
@@ -145,6 +145,9 @@ e2e: ## Run the end-to-end test against the local stack (needs Docker)
 
 e2e-native: ## Run the end-to-end test without Docker (needs envoy on PATH)
 	bash scripts/e2e-native.sh
+
+e2e-observability: ## Follow one request through Envoy, the services, the tap and Elasticsearch (needs Docker)
+	bash scripts/e2e-observability.sh
 
 REPLAY_FROM ?= -15m
 REPLAY_SPEED ?= 4

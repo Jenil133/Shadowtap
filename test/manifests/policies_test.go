@@ -724,7 +724,7 @@ func TestTapTerminationBudget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("terminationDrainDuration %q: %v", proxy.TerminationDrainDuration, err)
 	}
-	// The budget in cmd/shadowtap-tap: 12s gRPC stop + 7s drain + 7s flush + 2s admin.
+	// The budget in cmd/shadowtap-tap: 12s gRPC stop + 7s drain + 5s flush + 2s telemetry + 2s admin.
 	const tapShutdownBudget = 28 * time.Second
 	grace := time.Duration(w.deploy.Spec.Template.Spec.TerminationGracePeriodSeconds) * time.Second
 	if drain < tapShutdownBudget {

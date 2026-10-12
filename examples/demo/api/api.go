@@ -31,6 +31,9 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/Jenil133/Shadowtap/internal/tracectx"
 )
 
@@ -61,15 +64,29 @@ type Options struct {
 	// logs name the route pattern, never the raw path, because paths carry
 	// personal data. Defaults to discarding logs.
 	Logger *slog.Logger
+	// Role is the part of the application to serve; the default RoleAll
+	// serves everything from one process.
+	Role Role
+	// UsersURL and OrdersURL are the other services' base URLs, needed by
+	// RoleGateway (both) and RoleOrders (users).
+	UsersURL  string
+	OrdersURL string
+	// TracerProvider produces the HTTP server and client spans; nil uses the
+	// global provider.
+	TracerProvider trace.TracerProvider
 }
 
 // API is the demo application. It is safe for concurrent use.
 type API struct {
-	version string
-	now     func() time.Time
-	log     *slog.Logger
-	store   *store
-	signer  tokenSigner
+	version             string
+	now                 func() time.Time
+	log                 *slog.Logger
+	store               *store
+	signer              tokenSigner
+	role                Role
+	usersURL, ordersURL string
+	tracerProvider      trace.TracerProvider
+	httpClient          *http.Client
 	// dummy is checked when a login names an unknown email so that the
 	// response time does not reveal whether the account exists.
 	dummy       passwordHash
@@ -79,12 +96,29 @@ type API struct {
 
 // New returns an API seeded with three users.
 func New(opts Options) (*API, error) {
+	role, err := ParseRole(string(opts.Role))
+	if err != nil {
+		return nil, fmt.Errorf("api: %w", err)
+	}
 	a := &API{
-		version: opts.Version,
-		now:     opts.Now,
-		log:     opts.Logger,
-		store:   newStore(),
-		signer:  newTokenSigner(),
+		version:        opts.Version,
+		now:            opts.Now,
+		log:            opts.Logger,
+		store:          newStore(),
+		signer:         newTokenSigner(),
+		role:           role,
+		usersURL:       opts.UsersURL,
+		ordersURL:      opts.OrdersURL,
+		tracerProvider: opts.TracerProvider,
+	}
+	if a.tracerProvider == nil {
+		a.tracerProvider = otel.GetTracerProvider()
+	}
+	if (role == RoleGateway || role == RoleOrders) && a.usersURL == "" {
+		return nil, fmt.Errorf("api: role %s needs the users service URL", role)
+	}
+	if role == RoleGateway && a.ordersURL == "" {
+		return nil, fmt.Errorf("api: role %s needs the orders service URL", role)
 	}
 	if a.version == "" {
 		a.version = VersionV1
@@ -98,7 +132,6 @@ func New(opts Options) (*API, error) {
 	if a.log == nil {
 		a.log = slog.New(slog.DiscardHandler)
 	}
-	var err error
 	if a.dummy, err = hashPassword("not-a-real-password"); err != nil {
 		return nil, fmt.Errorf("api: %w", err)
 	}
@@ -109,15 +142,10 @@ func New(opts Options) (*API, error) {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", a.healthz)
-	mux.HandleFunc("POST /api/users", a.createUser)
-	mux.HandleFunc("GET /api/users", a.listUsers)
-	mux.HandleFunc("GET /api/users/{id}", a.getUser)
-	mux.HandleFunc("GET /api/users/lookup/{email}", a.lookupUser)
-	mux.HandleFunc("POST /api/orders", a.createOrder)
-	mux.HandleFunc("GET /api/orders/{id}", a.getOrder)
-	mux.HandleFunc("POST /api/login", a.login)
-	a.handler = a.middleware(mux)
+	if err := a.routes(mux); err != nil {
+		return nil, err
+	}
+	a.handler = a.instrument(a.middleware(mux))
 	return a, nil
 }
 

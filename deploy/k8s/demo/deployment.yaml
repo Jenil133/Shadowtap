@@ -6,8 +6,8 @@ metadata:
     app: demo-api
     version: v1
 spec:
-  # demo-api keeps its users and orders in memory: one replica keeps reads consistent with
-  # writes, so captured traffic replays the same way.
+  # The gateway: Envoy's ext_proc filter captures its inbound traffic (deploy/istio selects
+  # app: demo-api), and it forwards to demo-users and demo-orders with the trace context.
   replicas: 1
   revisionHistoryLimit: 5
   selector:
@@ -34,7 +34,22 @@ spec:
       containers:
         - name: demo-api
           image: ghcr.io/jenil133/shadowtap-demo-api:latest
-          args: ["--addr", ":8080", "--version", "v1"]
+          args: ["--addr", ":8080", "--version", "v1", "--role", "gateway",
+                 "--users-url", "http://demo-users:8080", "--orders-url", "http://demo-orders:8080",
+                 "--otel", "--otel-endpoint", "otel-collector.shadowtap.svc:4317"]
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
           ports:
             - name: http
               containerPort: 8080

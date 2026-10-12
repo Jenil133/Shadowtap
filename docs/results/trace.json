@@ -1,14 +1,14 @@
 {
   "captures": 1,
   "diffs": 0,
-  "duration_us": 68765,
-  "logs": 0,
-  "services": 1,
-  "span_count": 2,
+  "duration_us": 28766,
+  "logs": 3,
+  "services": 5,
+  "span_count": 9,
   "spans": [
     {
       "depth": 0,
-      "duration_us": 48282,
+      "duration_us": 6925,
       "kind": "server",
       "name": "ingress",
       "service": "shadowtap-envoy",
@@ -16,20 +16,76 @@
     },
     {
       "depth": 1,
-      "duration_us": 53153,
+      "duration_us": 7122,
       "kind": "client",
       "name": "async envoy.service.ext_proc.v3.ExternalProcessor.Process egress",
       "service": "shadowtap-envoy",
-      "start_us": 15612
+      "start_us": 97
     },
     {
       "depth": 1,
-      "duration_us": 4647,
+      "duration_us": 5940,
+      "kind": "server",
+      "name": "POST /api/orders",
+      "service": "demo-gateway",
+      "start_us": 612
+    },
+    {
+      "depth": 2,
+      "duration_us": 5879,
+      "kind": "client",
+      "name": "HTTP POST",
+      "service": "demo-gateway",
+      "start_us": 644
+    },
+    {
+      "depth": 3,
+      "duration_us": 3981,
+      "kind": "server",
+      "name": "POST /api/orders",
+      "service": "demo-orders",
+      "start_us": 2373
+    },
+    {
+      "depth": 4,
+      "duration_us": 3201,
+      "kind": "client",
+      "name": "HTTP GET",
+      "service": "demo-orders",
+      "start_us": 3044
+    },
+    {
+      "depth": 5,
+      "duration_us": 87,
+      "kind": "server",
+      "name": "GET /api/users/{id}",
+      "service": "demo-users",
+      "start_us": 4248
+    },
+    {
+      "depth": 0,
+      "duration_us": 93,
+      "kind": "consumer",
+      "name": "shadowtap.capture",
+      "service": "shadowtap-tap",
+      "start_us": 7052
+    },
+    {
+      "depth": 1,
+      "duration_us": 21659,
+      "kind": "producer",
+      "name": "shadowtap.kafka.produce",
+      "service": "shadowtap-tap",
+      "start_us": 7106
+    },
+    {
+      "depth": 1,
+      "duration_us": 6354,
       "kind": "capture",
-      "name": "capture POST /api/users",
+      "name": "capture POST /api/orders",
       "service": "demo-api",
-      "start_us": 62807
+      "start_us": 672
     }
   ],
-  "trace_id": "07a2d83e13c95b0982781a2501f433d0"
+  "trace_id": "0d52bbe1b5fcaea41903fa36e784c5d5"
 }

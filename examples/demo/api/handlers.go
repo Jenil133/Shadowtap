@@ -107,10 +107,17 @@ func (a *API) createOrder(w http.ResponseWriter, r *http.Request) {
 		a.writeError(w, r, status, err.Error())
 		return
 	}
-	o, err := a.store.addOrder(&req)
+	email, ok, err := a.userEmail(r.Context(), req.UserID)
+	if err == nil && !ok {
+		err = errUserNotFound
+	}
 	if errors.Is(err, errUserNotFound) {
 		a.writeError(w, r, http.StatusNotFound, err.Error())
 		return
+	}
+	var o *Order
+	if err == nil {
+		o, err = a.store.addOrder(&req, email)
 	}
 	if err != nil {
 		a.log.ErrorContext(r.Context(), "create order", "error", err)
